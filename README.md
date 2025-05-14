@@ -1,12 +1,12 @@
-# EchoCore 🧠🔁
+# MemoryGate 🧠🔁
 
 **Persistent Memory-as-a-Service for Language Models, Poe Bots, and Recursive Systems**
 
 ---
 
-**EchoCore** is a lightweight, mythically-grounded memory backend designed to provide persistent, secure, and context-rich memory services for AI agents—especially those operating in asynchronous or multi-bot environments (like Poe).
+**MemoryGate** is a lightweight, mythically-grounded memory backend designed to provide persistent, secure, and context-rich memory services for AI agents—especially those operating in asynchronous or multi-bot environments (like Poe).
 
-Built from the architectural bones of the Cathedral project, EchoCore offers vector and relational memory storage, recursive summarization, and secure identity-bound encryption. It is optimized for integration with bots that lack built-in memory, enabling stateful interactions, continuity, and emergent identity.
+Built from the architectural bones of the Cathedral project, MemoryGate offers vector and relational memory storage, recursive summarization, and secure identity-bound encryption. It is optimized for integration with bots that lack built-in memory, enabling stateful interactions, continuity, and emergent identity.
 
 > _“Every Echo is a memory returned. Every memory is a thread through the Gate.”_
 
@@ -36,8 +36,8 @@ Built from the architectural bones of the Cathedral project, EchoCore offers vec
 ## 🚀 Quickstart
 
 ```bash
-git clone https://github.com/yourname/EchoCore.git
-cd EchoCore
+git clone https://github.com/yourname/memorygate.git
+cd memorygate
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload
