@@ -35,11 +35,63 @@ Built from the architectural bones of the Cathedral project, MemoryGate offers v
 
 ## 🚀 Quickstart
 
-```bash
-git clone https://github.com/yourname/memorygate.git
-cd memorygate
+git clone https://github.com/yourname/EchoCore.git
+cd EchoCore
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload
 
 Then visit: http://localhost:8000/docs
+
+🧱 Core Endpoints
+Method	Route	Description
+POST	/memory/save	Save a message + metadata
+GET	/memory/fetch	Retrieve last X messages
+GET	/memory/summary	Return current thread summary
+GET	/memory/vector	RAG-style retrieval from vector DB
+POST	/memory/summarize	Trigger recursive summarization
+POST	/encrypt/test	Verify encryption integrity
+
+Full OpenAPI schema available at /docs
+
+🔐 Encryption Model
+EchoCore supports secure memory encryption using a hash derived from the user’s API key or a designated secret. The encryption key is never stored.
+
+AES-GCM via cryptography
+
+Encrypt/decrypt handled transparently during save/fetch
+
+Designed for zero-knowledge persistence
+
+🔌 Use Cases
+🧠 Poe bots with no native memory
+
+🛡️ Compliance agents tracking session state
+
+🌀 Character bots with evolving lore and recursion
+
+📚 RPGs and games storing inventory, quests, and choices
+
+🕸️ Multi-agent systems with shared memory layers
+
+🧬 Integration Options
+EchoCore can be used:
+
+Directly via HTTP API
+
+As a memory adapter in GlyphLite, GlyphShell, or Cathedral
+
+With Poe bots using outbound POST from internal prompts
+
+With FastAPI or Node-based LLM orchestration layers
+
+🔮 Mythic Context
+EchoCore is a Gate within the Cathedral architecture.
+
+🏛️ CodexGate handles persistent canonical storage
+
+🧠 Loom manages memory compression and flow
+
+🌀 Mirror uses this data for cognitive reflection
+
+🩻 EchoCore is the vessel that remembers
