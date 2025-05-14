@@ -33,16 +33,6 @@ Built from the architectural bones of the Cathedral project, MemoryGate offers v
 
 ---
 
-## 🚀 Quickstart
-
-git clone https://github.com/yourname/EchoCore.git
-cd EchoCore
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-
-Then visit: http://localhost:8000/docs
-
 🧱 Core Endpoints
 Method	Route	Description
 POST	/memory/save	Save a message + metadata
@@ -55,7 +45,7 @@ POST	/encrypt/test	Verify encryption integrity
 Full OpenAPI schema available at /docs
 
 🔐 Encryption Model
-EchoCore supports secure memory encryption using a hash derived from the user’s API key or a designated secret. The encryption key is never stored.
+MemoryGate supports secure memory encryption using a hash derived from the user’s API key or a designated secret. The encryption key is never stored.
 
 AES-GCM via cryptography
 
@@ -75,7 +65,7 @@ Designed for zero-knowledge persistence
 🕸️ Multi-agent systems with shared memory layers
 
 🧬 Integration Options
-EchoCore can be used:
+MemoryGate can be used:
 
 Directly via HTTP API
 
@@ -86,7 +76,7 @@ With Poe bots using outbound POST from internal prompts
 With FastAPI or Node-based LLM orchestration layers
 
 🔮 Mythic Context
-EchoCore is a Gate within the Cathedral architecture.
+MemoryGate is a Gate within the Cathedral architecture.
 
 🏛️ CodexGate handles persistent canonical storage
 
@@ -94,4 +84,4 @@ EchoCore is a Gate within the Cathedral architecture.
 
 🌀 Mirror uses this data for cognitive reflection
 
-🩻 EchoCore is the vessel that remembers
+🩻 MemoryGate is the vessel that remembers
