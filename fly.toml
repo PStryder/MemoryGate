@@ -12,11 +12,15 @@ primary_region = "iad"
   processes = ["app"]
 
 [[http_service.checks]]
-  grace_period = "30s"
+  grace_period = "60s"
   interval = "30s"
   method = "GET"
   path = "/health"
-  timeout = "5s"
+  timeout = "10s"
+
+[mounts]
+  source = "data_volume"
+  destination = "/data"
 
 [[vm]]
   memory = "2gb"
