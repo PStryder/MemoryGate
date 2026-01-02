@@ -534,8 +534,8 @@ async def root():
     }
 
 
-# Mount MCP app (both with and without trailing slash)
-app.mount("/mcp", mcp_app)
+# Mount MCP app at /mcp/ (trailing slash important for SSE endpoint)
+app.mount("/mcp/", mcp_app)
 
 
 # =============================================================================
