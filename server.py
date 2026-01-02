@@ -9,12 +9,12 @@ from datetime import datetime
 from typing import Optional, List
 from contextlib import asynccontextmanager
 
+import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from sqlalchemy import create_engine, text, func, desc
-from sqlalchemy.orm import sessionmaker, Session as DBSession
-from sentence_transformers import SentenceTransformer
+from sqlalchemy.orm import sessionmaker
 import numpy as np
 
 from models import (
@@ -26,13 +26,16 @@ from models import (
 # Configuration
 # =============================================================================
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:0Ktt2wMzgBPrLxj@memorygate-db.internal:5432/postgres"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
 
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-EMBEDDING_DIM = 384
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY environment variable is required")
+
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIM = 1536
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("memorygate")
@@ -43,63 +46,86 @@ logger = logging.getLogger("memorygate")
 
 engine = None
 SessionLocal = None
-embedding_model = None
 
 
 def init_db():
     """Initialize database connection and create tables."""
     global engine, SessionLocal
     
-    logger.info(f"Connecting to database...")
+    logger.info("Connecting to database...")
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine)
     
-    # Create tables
-    Base.metadata.create_all(engine)
-    
-    # Ensure pgvector extension
+    # FIRST: Ensure pgvector extension exists
+    logger.info("Ensuring pgvector extension...")
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.commit()
     
-    # Create HNSW index for fast vector search if not exists
-    with engine.connect() as conn:
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS ix_embeddings_vector_hnsw 
-            ON embeddings USING hnsw (embedding vector_cosine_ops)
-        """))
-        conn.commit()
+    # THEN: Create tables (which depend on vector type)
+    logger.info("Creating tables...")
+    Base.metadata.create_all(engine)
+    
+    # Create HNSW index for fast vector search (non-fatal if fails)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_embeddings_vector_hnsw 
+                ON embeddings USING hnsw (embedding vector_cosine_ops)
+            """))
+            conn.commit()
+        logger.info("HNSW index ready")
+    except Exception as e:
+        logger.warning(f"Could not create HNSW index (non-fatal): {e}")
     
     logger.info("Database initialized")
 
 
-def init_embedding_model():
-    """Load the sentence transformer model."""
-    global embedding_model
-    logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    logger.info("Embedding model loaded")
+async def embed_text(text: str) -> List[float]:
+    """Generate embedding using OpenAI API."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.openai.com/v1/embeddings",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": EMBEDDING_MODEL,
+                "input": text
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["data"][0]["embedding"]
 
 
-def get_db():
-    """Get database session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def embed_text(text: str) -> np.ndarray:
-    """Generate embedding for text."""
-    return embedding_model.encode(text, normalize_embeddings=True)
+def embed_text_sync(text: str) -> List[float]:
+    """Synchronous version of embed_text."""
+    with httpx.Client() as client:
+        response = client.post(
+            "https://api.openai.com/v1/embeddings",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": EMBEDDING_MODEL,
+                "input": text
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["data"][0]["embedding"]
 
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
-def get_or_create_ai_instance(db: DBSession, name: str, platform: str) -> AIInstance:
+def get_or_create_ai_instance(db, name: str, platform: str) -> AIInstance:
     """Get or create an AI instance by name."""
     instance = db.query(AIInstance).filter(AIInstance.name == name).first()
     if not instance:
@@ -111,7 +137,7 @@ def get_or_create_ai_instance(db: DBSession, name: str, platform: str) -> AIInst
 
 
 def get_or_create_session(
-    db: DBSession, 
+    db, 
     conversation_id: str, 
     title: Optional[str] = None,
     ai_instance_id: Optional[int] = None,
@@ -162,12 +188,15 @@ def memory_search(
     Returns:
         List of matching observations with similarity scores
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         # Generate query embedding
-        query_embedding = embed_text(query)
+        query_embedding = embed_text_sync(query)
         
-        # Build query with vector similarity
+        # Format embedding for pgvector
+        embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        
+        # Build query with vector similarity using explicit cast
         sql = text("""
             SELECT 
                 o.id,
@@ -178,19 +207,19 @@ def memory_search(
                 o.evidence,
                 ai.name as ai_name,
                 s.title as session_title,
-                1 - (e.embedding <=> :embedding) as similarity
+                1 - (e.embedding <=> (:embedding)::vector) as similarity
             FROM observations o
             JOIN embeddings e ON e.source_type = 'observation' AND e.source_id = o.id
             LEFT JOIN ai_instances ai ON o.ai_instance_id = ai.id
             LEFT JOIN sessions s ON o.session_id = s.id
             WHERE o.confidence >= :min_confidence
             AND (:domain IS NULL OR o.domain = :domain)
-            ORDER BY e.embedding <=> :embedding
+            ORDER BY e.embedding <=> (:embedding)::vector
             LIMIT :limit
         """)
         
         results = db.execute(sql, {
-            "embedding": f"[{','.join(map(str, query_embedding))}]",
+            "embedding": embedding_str,
             "min_confidence": min_confidence,
             "domain": domain,
             "limit": limit
@@ -253,7 +282,7 @@ def memory_store(
     Returns:
         The stored observation with its ID
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         # Get or create AI instance
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
@@ -279,12 +308,12 @@ def memory_store(
         db.refresh(obs)
         
         # Generate and store embedding
-        embedding_vector = embed_text(observation)
+        embedding_vector = embed_text_sync(observation)
         emb = Embedding(
             source_type="observation",
             source_id=obs.id,
             model_version=EMBEDDING_MODEL,
-            embedding=embedding_vector.tolist(),
+            embedding=embedding_vector,
             normalized=True
         )
         db.add(emb)
@@ -322,7 +351,7 @@ def memory_recall(
     Returns:
         List of matching observations
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         query = db.query(Observation).join(
             AIInstance, Observation.ai_instance_id == AIInstance.id, isouter=True
@@ -378,7 +407,7 @@ def memory_stats() -> dict:
     Returns:
         Counts and statistics about stored data
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         obs_count = db.query(func.count(Observation.id)).scalar()
         pattern_count = db.query(func.count(Pattern.id)).scalar()
@@ -397,6 +426,8 @@ def memory_stats() -> dict:
         
         return {
             "status": "healthy",
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_dim": EMBEDDING_DIM,
             "counts": {
                 "observations": obs_count,
                 "patterns": pattern_count,
@@ -439,7 +470,7 @@ def memory_init_session(
     Returns:
         Session information
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
         session = get_or_create_session(
@@ -476,7 +507,6 @@ mcp_app = mcp.http_app(
 async def lifespan(app: FastAPI):
     """Initialize on startup."""
     init_db()
-    init_embedding_model()
     yield
 
 
@@ -496,6 +526,7 @@ async def root():
         "service": "MemoryGate",
         "version": "0.1.0",
         "description": "Persistent Memory-as-a-Service for AI Agents",
+        "embedding_model": EMBEDDING_MODEL,
         "endpoints": {
             "health": "/health",
             "mcp": "/mcp/"

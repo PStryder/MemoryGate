@@ -12,10 +12,5 @@ sqlalchemy
 alembic
 pgvector
 
-# ML/Embeddings (CPU-only)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-sentence-transformers
-
-# Utilities
+# HTTP client for OpenAI
 httpx

@@ -215,7 +215,7 @@ class Embedding(Base):
     source_type = Column(String(50), primary_key=True)  # observation/pattern/concept/document
     source_id = Column(Integer, primary_key=True)
     model_version = Column(String(100), primary_key=True, default="all-MiniLM-L6-v2")
-    embedding = Column(Vector(384), nullable=False)
+    embedding = Column(Vector(1536), nullable=False)  # OpenAI text-embedding-3-small
     normalized = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
