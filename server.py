@@ -140,11 +140,7 @@ def get_or_create_session(
 # FastMCP Server
 # =============================================================================
 
-mcp = FastMCP(
-    "MemoryGate",
-    stateless_http=True,
-    json_response=True,
-)
+mcp = FastMCP("MemoryGate")
 
 
 @mcp.tool()
@@ -467,6 +463,15 @@ def memory_init_session(
 # FastAPI App
 # =============================================================================
 
+# Create MCP ASGI app
+mcp_app = mcp.http_app(
+    path="/",
+    transport="sse",
+    stateless_http=True,
+    json_response=True,
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize on startup."""
@@ -499,7 +504,7 @@ async def root():
 
 
 # Mount MCP app
-app.mount("/mcp", mcp.get_asgi_app())
+app.mount("/mcp/", mcp_app)
 
 
 # =============================================================================
