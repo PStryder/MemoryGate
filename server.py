@@ -12,7 +12,6 @@ from contextlib import asynccontextmanager
 import httpx
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
 from sqlalchemy import create_engine, text, func, desc
 from sqlalchemy.orm import sessionmaker
@@ -530,25 +529,13 @@ async def root():
         "embedding_model": EMBEDDING_MODEL,
         "endpoints": {
             "health": "/health",
-            "mcp": "/mcp/"
+            "mcp": "/mcp"
         }
     }
 
 
-# Redirect /mcp to /mcp/ for MCP clients that don't include trailing slash
-@app.get("/mcp")
-async def redirect_mcp():
-    """Redirect /mcp to /mcp/ for SSE endpoint."""
-    return RedirectResponse(url="/mcp/", status_code=307)
-
-@app.post("/mcp")
-async def redirect_mcp_post():
-    """Redirect POST /mcp to /mcp/ for SSE endpoint."""
-    return RedirectResponse(url="/mcp/", status_code=307)
-
-
-# Mount MCP app at /mcp/ (trailing slash important for SSE endpoint)
-app.mount("/mcp/", mcp_app)
+# Mount MCP app at /mcp (FastMCP will handle SSE at this path)
+app.mount("/mcp", mcp_app)
 
 
 # =============================================================================
