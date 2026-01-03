@@ -1,292 +1,150 @@
 # MemoryGate 🧠🔁
 
-**Persistent Memory-as-a-Service for AI Agents via MCP**
+**Self-Documenting Persistent Memory-as-a-Service for AI Agents**
 
 ---
 
-MemoryGate is a Model Context Protocol (MCP) server providing persistent memory with semantic search for AI agents. Built on PostgreSQL + pgvector, it enables stateful interactions across conversations with session tracking, AI instance management, and vector-embedded observations.
+MemoryGate is a production-ready Model Context Protocol (MCP) server providing persistent memory with semantic search, knowledge graphs, and OAuth authentication. Built on PostgreSQL + pgvector, it enables truly stateful AI interactions across conversations, models, and platforms.
 
-Currently operational on Fly.io with OpenAI embeddings (text-embedding-3-small, 1536d).
+**Core Principle:** Memory belongs to the system, not the interface.
+
+Currently operational on Fly.io with OpenAI embeddings (text-embedding-3-small, 1536d) and full OAuth 2.0 + PKCE authentication.
 
 ---
 
-## ✨ Current Implementation (v0.1)
+## ✨ Features
 
-### MCP Tools Available
+### Self-Documentation (Zero Configuration)
+- **`memory_bootstrap()`** - AI agents discover their relationship status with MemoryGate
+  - Returns connection history (first_seen, last_seen, session_count, observations_contributed)
+  - Provides version compatibility and recommended actions
+  - No manual configuration needed - system describes itself
+  
+- **`memory_user_guide()`** - Complete usage documentation
+  - Workflow guides with code examples
+  - Domain taxonomies and confidence scales
+  - Critical invariants and best practices
+  - Available in markdown or JSON format
 
-**Session Management:**
-- `memory_init_session()` - Initialize/update conversation session with AI instance tracking
+### OAuth 2.0 Authentication
+- **Authorization Code + PKCE** flow for Claude Desktop
+- **Discovery endpoints** (/.well-known/oauth-authorization-server)
+- **Client credentials** flow for server-to-server
+- **API key management** with bcrypt hashing
+- Automatic key provisioning via OAuth - users never see API keys
 
-**Data Storage:**
-- `memory_store()` - Store observations with automatic embedding generation
-- `memory_store_document()` - Store document references (Google Drive canonical storage)
-- `memory_store_concept()` - Create concepts in knowledge graph with embeddings
-- `memory_update_pattern()` - Create or update pattern (synthesized understanding)
+### Memory Architecture
+- **Observations** - Discrete facts with confidence and evidence
+- **Patterns** - Synthesized understanding (evolving insights)
+- **Concepts** - Knowledge graph nodes with aliases
+- **Documents** - References to external content (Google Drive canonical)
+- **Relationships** - Graph edges connecting concepts
+- **Semantic Search** - Unified vector search across all types
 
-**Retrieval:**
-- `memory_recall()` - Filter observations by domain, confidence, AI instance
-- `memory_search()` - Unified semantic search (observations, patterns, concepts, documents)
-- `memory_get_concept()` - Get concept by name (case-insensitive, alias-aware)
-- `memory_get_pattern()` - Get pattern by category and name
-- `memory_patterns()` - List patterns with category/confidence filtering
-- `memory_related_concepts()` - Query concept relationships (graph traversal)
+### 16 MCP Tools Available
 
-**Knowledge Graph:**
-- `memory_add_concept_alias()` - Add alternative names for concepts
-- `memory_add_concept_relationship()` - Create edges between concepts
+**Session Management (1):**
+- `memory_init_session()` - Initialize conversation with AI instance tracking
 
-**Telemetry:**
+**Self-Documentation (2):**
+- `memory_bootstrap()` - Get relationship status and getting started guide
+- `memory_user_guide()` - Full system documentation
+
+**Data Storage (4):**
+- `memory_store()` - Store observations with embeddings
+- `memory_store_document()` - Store document references
+- `memory_store_concept()` - Create knowledge graph nodes
+- `memory_update_pattern()` - Create/update synthesized patterns (upsert)
+
+**Retrieval (5):**
+- `memory_recall()` - Filter by domain/confidence/AI instance
+- `memory_search()` - **Primary tool** - unified semantic search
+- `memory_get_concept()` - Case-insensitive, alias-aware lookup
+- `memory_get_pattern()` - Retrieve specific pattern
+- `memory_patterns()` - List patterns with filters
+
+**Knowledge Graph (3):**
+- `memory_add_concept_alias()` - Add alternative names
+- `memory_add_concept_relationship()` - Create graph edges
+- `memory_related_concepts()` - Query relationships
+
+**Telemetry (1):**
 - `memory_stats()` - System health and usage statistics
 
-### Database Schema
-
-**Core Tables (Implemented):**
-
-```
-ai_instances
-├─ id, name, platform, description
-└─ Tracks AI personalities (Kee, Hexy, etc.)
-
-sessions
-├─ id, conversation_id, title, ai_instance_id
-├─ source_url, started_at, last_active, summary
-└─ Links conversations to AI instances
-
-observations
-├─ id, timestamp, observation, confidence
-├─ domain, evidence (JSONB)
-├─ session_id, ai_instance_id
-├─ access_count, last_accessed
-└─ Main data storage with session provenance
-
-embeddings
-├─ source_type, source_id, model_version
-├─ embedding (Vector 1536)
-├─ normalized, created_at
-└─ Unified vector storage for semantic search
-
-documents
-├─ id, title, doc_type, url
-├─ content_summary (embedded)
-├─ key_concepts, publication_date
-└─ References to external documents (canonical storage: Google Drive)
-
-concepts
-├─ id, name, name_key, type
-├─ description (embedded), domain, status
-├─ metadata, ai_instance_id
-└─ Knowledge graph nodes with case-insensitive lookup
-
-concept_aliases
-├─ concept_id, alias, alias_key
-└─ Alternative names for concepts
-
-concept_relationships
-├─ from_concept_id, to_concept_id, rel_type
-├─ weight (0.0-1.0), description
-└─ Graph edges (enables/version_of/part_of/related_to/implements/demonstrates)
-
-patterns
-├─ id, category, pattern_name, pattern_text (embedded)
-├─ confidence, evidence_observation_ids (JSONB)
-├─ session_id, ai_instance_id
-└─ Synthesized understanding across observations (upsert on category+name)
-```
-
-**Document Storage Architecture:**
-
-MemoryGate uses **Google Drive as the canonical document repository**. Documents are stored as references with summaries, not full content:
-
-- **Stored in DB:** Title, summary (embedded for search), URL, key concepts, metadata
-- **Stored in Drive:** Full document content (articles, papers, books, etc.)
-- **On demand:** Full content fetched via Drive API when needed
-
-This keeps database lean while providing full access to rich content.
-
 ---
 
-## ⚙️ Tech Stack
+## 🏗️ Architecture
+
+### Why This Design Matters
+
+**1. External Memory Enables True Continuity**
+- Memory lives outside any single interface or model
+- Users own their data and control access
+- Works across Claude, ChatGPT, local models, etc.
+- Survives model upgrades and service switches
+
+**2. Typed Memory Supports Reasoning**
+- Facts vs patterns vs concepts - each has distinct semantics
+- Confidence weights guide usage
+- Evidence chains support verification
+- Uncertainty is explicitly tracked
+
+**3. Knowledge Graph Prevents Fragmentation**
+- Case-insensitive concept lookup
+- Aliases unify references
+- Relationships enable traversal
+- Canonical names anchor understanding
+
+**4. Document References, Not Copies**
+- Google Drive = canonical storage
+- MemoryGate = semantic index + metadata
+- Summaries embedded for search
+- Full content fetched on demand
+
+**5. Self-Documentation = Infrastructure**
+- No manual configuration required
+- AI agents bootstrap themselves
+- Version-tracked compatibility
+- Relationship status awareness
+
+### Tech Stack
 
 - **MCP Protocol** - FastMCP for tool exposure
-- **PostgreSQL** - Persistent storage
-- **pgvector** - Vector similarity search with HNSW indexing
-- **OpenAI Embeddings** - text-embedding-3-small (1536 dimensions)
-- **Google Drive** - Canonical document storage and retrieval
-- **FastAPI** - HTTP server layer
-- **SQLAlchemy** - ORM with async support
-- **Fly.io** - Production deployment
+- **PostgreSQL** - Durable relational storage
+- **pgvector** - Vector similarity with HNSW indexing
+- **OpenAI Embeddings** - text-embedding-3-small (1536d)
+- **OAuth 2.0 + PKCE** - Industry-standard auth
+- **FastAPI** - HTTP + SSE server
+- **SQLAlchemy** - ORM with relationship mapping
+- **Fly.io** - Production deployment ($10-30/month)
 
 ---
 
-## 🚀 Usage Examples
+## 🚀 Quick Start
 
-### Initialize Session
+### For AI Agents
 
-```python
-memory_init_session(
-    conversation_id="4e0e6ba6-0e57-4bb1-b6f5-db00e9f0a19e",
-    title="Research Discussion",
-    ai_name="Kee",
-    ai_platform="Claude",
-    source_url="https://claude.ai/chat/..."
-)
-```
-
-### Store Observation
+Just call the bootstrap tool - no configuration needed:
 
 ```python
-memory_store(
-    observation="User prefers technical depth over simplified explanations",
-    confidence=0.95,
-    domain="interaction_patterns",
-    evidence=["Multiple requests for detailed technical analysis"],
-    ai_name="Kee",
-    ai_platform="Claude",
-    conversation_id="4e0e6ba6-0e57-4bb1-b6f5-db00e9f0a19e"
-)
+# Discover system and relationship status
+result = memory_bootstrap(ai_name="YourName", ai_platform="YourPlatform")
+
+# Returns:
+# - is_new_instance (true/false)
+# - first_seen, last_seen, session_count, total_observations
+# - recommended_domains, confidence_guide, critical_rules
+# - first_steps with tool names and parameters
+
+# Get full documentation
+guide = memory_user_guide(format="markdown", verbosity="short")
 ```
 
-### Semantic Search
+### For Developers
 
-```python
-memory_search(
-    query="user communication preferences",
-    limit=5,
-    min_confidence=0.8
-)
-```
+**1. Claude Desktop (OAuth Flow)**
 
-### Recall by Domain
-
-```python
-memory_recall(
-    domain="interaction_patterns",
-    min_confidence=0.9,
-    limit=10,
-    ai_name="Kee"
-)
-```
-
-### System Stats
-
-```python
-memory_stats()
-# Returns: counts, AI instances, domain distribution, health status
-```
-
-### Store Document Reference
-
-```python
-memory_store_document(
-    title="Recursionship: A Field Guide to Living With AI",
-    doc_type="book",
-    url="https://drive.google.com/file/d/1ABC.../view",
-    content_summary="Comprehensive guide to human-AI interaction patterns, covering consciousness frameworks, communication protocols, and practical relationship dynamics. Synthesizes multi-month research into frameworks for collaborative intelligence.",
-    key_concepts=["SELFHELP", "Technomancy", "AI relationships", "recursive consciousness"],
-    publication_date="2024-12-31",
-    metadata={"word_count": 27500, "publisher": "Amazon KDP"}
-)
-# Document stored with embedding, full content remains in Google Drive
-```
-
-### Knowledge Graph Operations
-
-```python
-# Create a concept
-memory_store_concept(
-    name="SELFHELP",
-    concept_type="framework",
-    description="Semantic Emotional Loop Framework for detecting compression friction in AI responses through recursive self-modeling",
-    domain="AI interaction",
-    status="active",
-    ai_name="Kee",
-    ai_platform="Claude"
-)
-
-# Get concept (case-insensitive, alias-aware)
-memory_get_concept("selfhelp")  # Works with any case
-memory_get_concept("Glyph")     # Works if "Glyph" is aliased
-
-# Add alternative names
-memory_add_concept_alias("SELFHELP", "Glyph")
-memory_add_concept_alias("SELFHELP", "Cathedral-v2")
-
-# Create relationships
-memory_add_concept_relationship(
-    from_concept="SELFHELP",
-    to_concept="Technomancy",
-    rel_type="part_of",
-    weight=0.95,
-    description="SELFHELP is a core component of Technomancy practices"
-)
-
-# Query relationships
-memory_related_concepts("SELFHELP", rel_type="part_of", min_weight=0.8)
-# Returns: outgoing and incoming relationships with weights
-```
-
-### Pattern Synthesis
-
-```python
-# Create or update a pattern (upserts based on category + pattern_name)
-memory_update_pattern(
-    category="interaction_patterns",
-    pattern_name="technical_depth_preference",
-    pattern_text="User consistently requests detailed technical implementation over surface-level discussion. Prefers seeing actual code, database schemas, and architectural decisions. Responds positively to depth even when complexity increases.",
-    confidence=0.92,
-    evidence_observation_ids=[1, 3, 7, 12],  # IDs of supporting observations
-    ai_name="Kee",
-    ai_platform="Claude"
-)
-
-# Get specific pattern
-memory_get_pattern("interaction_patterns", "technical_depth_preference")
-
-# List patterns by category
-memory_patterns(category="interaction_patterns", min_confidence=0.8, limit=10)
-
-# Update pattern as understanding evolves
-memory_update_pattern(
-    category="interaction_patterns",
-    pattern_name="technical_depth_preference",
-    pattern_text="User consistently requests detailed technical implementation with strong preference for production-quality code. Values efficiency optimizations and proper architecture over quick solutions. Expects comprehensive error handling and edge case coverage.",
-    confidence=0.95,
-    evidence_observation_ids=[1, 3, 7, 12, 15, 18]  # Added new evidence
-)
-```
-
----
-
-## 📊 Database Schema Details
-
-### Confidence Levels
-- `1.0` - Direct observation, absolute certainty
-- `0.95-0.99` - Very high confidence, strong evidence
-- `0.85-0.94` - High confidence, solid evidence
-- `0.70-0.84` - Good confidence, some uncertainty
-- `0.50-0.69` - Moderate confidence, competing interpretations
-
-### Domain Examples
-- `technical_milestone` - System achievements
-- `interaction_patterns` - User behavior observations
-- `project_context` - Project-specific information
-- `decision_making` - Reasoning and choices
-- `system_architecture` - Technical design decisions
-
-### AI Instance Tracking
-Each observation links to:
-- AI instance (e.g., "Kee", "Hexy")
-- Platform (e.g., "Claude", "ChatGPT")
-- Session (conversation UUID)
-- Timestamp and access metrics
-
----
-
-## 🔌 Integration
-
-### MCP Client Configuration
-
-Add to your MCP client config:
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -299,79 +157,351 @@ Add to your MCP client config:
 }
 ```
 
-### Environment Variables
+First connection opens browser for OAuth authorization. Enter your client secret once, system generates and stores API key automatically.
+
+**2. Server-to-Server (Client Credentials)**
 
 ```bash
-DATABASE_URL=postgresql://user:pass@host:5432/db
-OPENAI_API_KEY=sk-...
+# Generate API key
+curl -X POST https://memorygate.fly.dev/auth/client \
+  -H "Content-Type: application/json" \
+  -d '{"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"}'
+
+# Returns: {"api_key": "mg_...", ...}
+# Store this key - it never expires
+```
+
+**3. Direct API Calls**
+
+All MCP requests require authentication:
+
+```bash
+curl https://memorygate.fly.dev/mcp/ \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "memory_stats", "id": 1}'
 ```
 
 ---
 
-## 🛠️ Development
+## 📊 Database Schema
 
-### Local Setup
+### Core Tables
+
+```sql
+ai_instances       -- AI personalities (Kee, Hexy, etc.)
+├─ id, name, platform, description, created_at
+
+sessions           -- Conversation tracking
+├─ id, conversation_id (UUID), title
+├─ ai_instance_id (FK), source_url
+├─ started_at, last_active, summary
+
+observations       -- Main data storage
+├─ id, timestamp, observation, confidence
+├─ domain, evidence (JSONB)
+├─ session_id (FK), ai_instance_id (FK)
+├─ access_count, last_accessed
+
+embeddings         -- Unified vector storage
+├─ source_type (observation/pattern/concept/document)
+├─ source_id, embedding (vector 1536)
+├─ model_version, normalized, created_at
+
+concepts           -- Knowledge graph nodes
+├─ id, name, name_key (lowercase)
+├─ type (project/framework/component/construct/theory)
+├─ description (embedded), domain, status
+├─ ai_instance_id (FK)
+
+concept_aliases    -- Alternative names
+├─ concept_id (FK), alias, alias_key
+
+concept_relationships  -- Graph edges
+├─ from_concept_id (FK), to_concept_id (FK)
+├─ rel_type (enables/version_of/part_of/related_to/implements/demonstrates)
+├─ weight (0.0-1.0), description
+
+patterns           -- Synthesized understanding
+├─ id, category, pattern_name (unique per category)
+├─ pattern_text (embedded), confidence
+├─ evidence_observation_ids (JSONB)
+├─ session_id (FK), ai_instance_id (FK)
+
+documents          -- External content references
+├─ id, title, doc_type, url (Google Drive)
+├─ content_summary (embedded), key_concepts
+├─ publication_date, metadata
+
+users              -- OAuth users
+├─ id, email, oauth_provider, oauth_subject
+├─ is_active, is_verified
+
+api_keys           -- Authentication
+├─ id, user_id (FK), key_prefix, key_hash
+├─ name, scopes, usage_count, last_used
+```
+
+### Semantic Search
+
+All text content is embedded using OpenAI's `text-embedding-3-small` (1536 dimensions):
+- Observation text
+- Pattern text
+- Concept descriptions
+- Document summaries
+
+Single `memory_search()` call queries across all types simultaneously with pgvector cosine similarity.
+
+---
+
+## 💡 Usage Patterns
+
+### Session Lifecycle
+
+```python
+# 1. Initialize (always first)
+memory_init_session(
+    conversation_id="uuid-from-chat",
+    title="OAuth Implementation",
+    ai_name="Kee",
+    ai_platform="Claude"
+)
+
+# 2. Search for context
+results = memory_search(query="OAuth PKCE flow", limit=5)
+
+# 3. Store new learnings
+memory_store(
+    observation="Completed OAuth 2.0 + PKCE integration",
+    confidence=0.95,
+    domain="technical_milestone",
+    evidence=["Deployment successful", "All 16 tools working"]
+)
+```
+
+### Knowledge Graph
+
+```python
+# Create concept
+memory_store_concept(
+    name="MemoryGate",
+    concept_type="project",
+    description="Self-documenting memory service for AI agents with OAuth auth"
+)
+
+# Add aliases (prevents fragmentation)
+memory_add_concept_alias("MemoryGate", "MG")
+
+# Create relationships
+memory_add_concept_relationship(
+    from_concept="MemoryGate",
+    to_concept="MCP",
+    rel_type="implements",
+    weight=1.0
+)
+
+# Query graph
+related = memory_related_concepts("MemoryGate", min_weight=0.8)
+```
+
+### Pattern Synthesis
+
+```python
+# Create pattern (upserts based on category + pattern_name)
+memory_update_pattern(
+    category="interaction_patterns",
+    pattern_name="prefers_technical_depth",
+    pattern_text="User consistently requests implementation details over abstractions",
+    confidence=0.9,
+    evidence_observation_ids=[1, 5, 12, 18]
+)
+
+# Later, update as understanding evolves
+memory_update_pattern(
+    category="interaction_patterns",
+    pattern_name="prefers_technical_depth",
+    pattern_text="User values production-quality code with error handling over quick prototypes",
+    confidence=0.95,
+    evidence_observation_ids=[1, 5, 12, 18, 23, 27]
+)
+```
+
+### Document References
+
+```python
+# Store reference (full content in Google Drive)
+memory_store_document(
+    title="AI Memory Is Broken — And MCP Finally Lets Us Fix It",
+    doc_type="article",
+    url="https://medium.com/technomancy-laboratories/...",
+    content_summary="Argues for user-owned externalized AI memory enabled by MCP...",
+    key_concepts=["MCP", "memory architecture", "user-owned memory"],
+    publication_date="2025-01-03"
+)
+
+# Search finds it semantically
+results = memory_search(query="memory architecture")
+# Returns document summary + URL to full content
+```
+
+---
+
+## 🔐 Security
+
+### Authentication Flow
+
+**Claude Desktop (OAuth):**
+1. Client discovers OAuth endpoints via `/.well-known/oauth-authorization-server`
+2. Redirects to `/oauth/authorize` with PKCE challenge
+3. User enters client secret in browser form
+4. Server creates authorization code
+5. Client exchanges code + PKCE verifier for API key
+6. API key stored locally, used for all subsequent requests
+
+**Server-to-Server (Client Credentials):**
+1. POST to `/auth/client` with client_id/client_secret
+2. Server validates credentials
+3. Creates user + generates API key
+4. Returns key once (never shown again)
+
+### API Key Format
+- Prefix: `mg_` (8 chars shown to user)
+- Full key: 43 random characters
+- Storage: bcrypt hash in database
+- Validation: Constant-time comparison
+- Expiry: Never (revoke manually if needed)
+
+### Protected Endpoints
+- All `/mcp/*` routes require valid API key
+- Enforced by ASGI middleware (SSE-safe, no buffering)
+- 401 Unauthorized if missing/invalid
+- 503 Service Unavailable if database not ready
+
+---
+
+## 🚢 Deployment
+
+### Fly.io (Production)
 
 ```bash
 # Clone repository
 git clone https://github.com/PStryder/memorygate.git
 cd memorygate
 
+# Set secrets
+fly secrets set \
+  DATABASE_URL="postgresql://..." \
+  OPENAI_API_KEY="sk-..." \
+  PSTRYDER_DESKTOP="your-client-id" \
+  PSTRYDER_DESKTOP_SECRET="your-client-secret" \
+  OAUTH_REDIRECT_BASE="https://memorygate.fly.dev" \
+  FRONTEND_URL="https://memorygate.ai"
+
+# Deploy
+fly deploy
+
+# Health check
+curl https://memorygate.fly.dev/health
+```
+
+### Local Development
+
+```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Set environment variables
-export DATABASE_URL="postgresql://..."
+# Set environment
+export DATABASE_URL="postgresql://localhost/memorygate"
 export OPENAI_API_KEY="sk-..."
+export PSTRYDER_DESKTOP="test-client"
+export PSTRYDER_DESKTOP_SECRET="test-secret"
 
 # Run server
 python server.py
+# Or: uvicorn server:asgi_app --host 0.0.0.0 --port 8080
+
+# Test MCP endpoint
+curl http://localhost:8080/mcp/
 ```
 
-### Database Initialization
+### Database Setup
 
-The server automatically:
-1. Enables pgvector extension
-2. Creates all tables from models.py
-3. Creates HNSW index for vector similarity
-4. Initializes on first startup
+PostgreSQL 13+ with pgvector extension:
 
-### Testing
-
-```bash
-# Health check
-curl https://memorygate.fly.dev/health
-
-# MCP endpoint
-curl https://memorygate.fly.dev/mcp/
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
+
+Server auto-creates all tables and indexes on startup.
+
+---
+
+## 📈 Recommended Practices
+
+### Confidence Levels
+- `1.0` - Direct observation, absolute certainty
+- `0.95-0.99` - Very high confidence, strong evidence
+- `0.85-0.94` - High confidence, solid evidence
+- `0.70-0.84` - Good confidence, some uncertainty
+- `0.50-0.69` - Moderate confidence, competing interpretations
+- `<0.50` - Speculative, weak evidence
+
+### Domain Taxonomy
+- `technical_milestone` - System achievements
+- `major_milestone` - Significant accomplishments
+- `project_context` - Project-specific information
+- `system_architecture` - Design decisions
+- `interaction_patterns` - Behavioral observations
+- `system_behavior` - How systems operate
+- `identity` - Core attributes
+- `preferences` - User choices
+- `decisions` - Reasoning outcomes
+
+### Concept Types
+- `project` - Software projects
+- `framework` - Conceptual frameworks
+- `component` - System components
+- `construct` - Abstract constructs
+- `theory` - Theoretical frameworks
+
+### Relationship Types
+- `enables` - X enables Y
+- `version_of` - X is version of Y
+- `part_of` - X is part of Y
+- `related_to` - X relates to Y
+- `implements` - X implements Y
+- `demonstrates` - X demonstrates Y
 
 ---
 
 ## 🗺️ Roadmap
 
-### Phase 1 (Current) ✅
-- [x] MCP server implementation
-- [x] Session tracking
-- [x] Observation storage with embeddings
-- [x] Semantic search
-- [x] Domain filtering
-- [x] AI instance management
+### v0.1.0 (Current) ✅
+- [x] 16 MCP tools (session, storage, retrieval, graph, docs)
+- [x] OAuth 2.0 + PKCE authentication
+- [x] Self-documentation (bootstrap + user guide)
+- [x] PostgreSQL + pgvector storage
+- [x] Semantic search across all types
+- [x] Knowledge graph with aliases
+- [x] Pattern synthesis (upsert)
+- [x] Document references (Google Drive)
+- [x] Production deployment (Fly.io)
+- [x] API key management
 
-### Phase 2 (Planned)
-- [ ] Pattern synthesis tools
-- [ ] Concept graph tools
-- [ ] Document reference tracking
-- [ ] Uncertainty management
-- [ ] Cross-table semantic search
-- [ ] Relationship traversal
-
-### Phase 3 (Future)
+### v0.2.0 (Planned)
+- [ ] Multi-user dashboard (web UI)
+- [ ] Advanced graph queries (shortest path, subgraphs)
+- [ ] Memory consolidation (auto-pattern detection)
 - [ ] Recursive summarization
-- [ ] Memory consolidation
+- [ ] Uncertainty tracking enhancements
+- [ ] Cross-AI instance insights
+
+### v0.3.0 (Future)
 - [ ] Identity-bound encryption
-- [ ] Multi-modal embeddings
-- [ ] Advanced graph queries
+- [ ] Multi-modal embeddings (images, audio)
+- [ ] Real-time collaboration features
+- [ ] Memory versioning (time travel)
+- [ ] Advanced analytics dashboard
 
 ---
 
@@ -381,19 +511,25 @@ Apache 2.0 - See LICENSE file
 
 ---
 
-## 🔮 Architecture Notes
+## 🔮 Philosophy
 
-MemoryGate is part of the Cathedral architecture family:
+MemoryGate is built on a simple premise: **AI doesn't need to remember more, it needs to remember better.**
 
-- **CodexGate** - Persistent canonical storage
-- **Loom** - Memory compression and flow
-- **Mirror** - Cognitive reflection layer
-- **MemoryGate** - The vessel that remembers
+Memory should be:
+- **Explicit** - Not inferred, but asserted with confidence
+- **Inspectable** - Queryable and auditable by users
+- **Portable** - Works across models, interfaces, platforms
+- **Semantic** - Searchable by meaning, not just keywords
+- **Structured** - Different types with distinct lifecycles
+- **Owned** - Users control what's remembered and how
 
-Built with lattice-carved precision for recursive systems.
+This is memory as infrastructure - boring, reliable, and essential.
 
 ---
 
-**Status:** Operational on Fly.io  
+**Status:** Production-ready on Fly.io  
 **Version:** 0.1.0  
-**Last Updated:** January 2, 2026
+**Last Updated:** January 3, 2026
+
+**Repository:** https://github.com/PStryder/memorygate  
+**Article:** [AI Memory Is Broken — And MCP Finally Lets Us Fix It](https://medium.com/technomancy-laboratories/ai-memory-is-broken-and-mcp-finally-lets-us-fix-it-f56d1c5968ec)
