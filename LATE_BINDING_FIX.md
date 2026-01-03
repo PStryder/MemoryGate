@@ -143,3 +143,100 @@ curl https://memorygate.fly.dev/auth/me -H "Authorization: Bearer mg_YOUR_KEY_HE
 4. **Explicit failures:** 503/RuntimeError instead of silent NoneType crashes
 
 This pattern is production-safe and handles initialization ordering correctly.
+
+## Module Duality Fix - The Final Dragon
+
+### The Problem
+
+Even with the `DB` class holder, you can still get separate module instances if the app starts in a way that creates a `__main__` module:
+
+**Broken pattern:**
+```bash
+# Dockerfile
+CMD ["python", "server.py"]
+
+# This creates two module instances:
+# 1. __main__ (from running server.py as a script)
+# 2. server (when other modules import it)
+
+# Result: Two separate DB class instances!
+# from server import DB  # Different DB than __main__.DB
+```
+
+When `oauth_routes.py` does `from server import DB`, it gets the `server` module instance. But if the app was started with `python server.py`, `init_db()` ran in the `__main__` module instance, updating `__main__.DB.SessionLocal` instead of `server.DB.SessionLocal`.
+
+**Two module instances = Two DB instances = SessionLocal still None**
+
+### The Solution: Module-Level ASGI App
+
+**Expose ASGI app at module level:**
+```python
+# server.py (module level, not in __main__)
+asgi_app = SlashNormalizerASGI(app)
+
+# Keep __main__ block for local dev convenience
+if __name__ == "__main__":
+    print("MemoryGate starting...")
+    uvicorn.run(asgi_app, host="0.0.0.0", port=8080)
+```
+
+**Start via uvicorn pointing to module symbol:**
+```dockerfile
+# Dockerfile
+CMD ["uvicorn", "server:asgi_app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+**Why this works:**
+- `uvicorn server:asgi_app` imports `server` as a module (not `__main__`)
+- All `from server import DB` statements get the same module instance
+- `init_db()` and `get_db_session()` both see the same `DB.SessionLocal`
+- No ghost modules
+
+### Production vs Development
+
+**Production (Fly.io):**
+```bash
+uvicorn server:asgi_app --host 0.0.0.0 --port 8080
+# Uses server module instance everywhere
+```
+
+**Local Development:**
+```bash
+python server.py
+# Still works! __main__ block calls uvicorn.run(asgi_app)
+# asgi_app is defined at module level, so it works the same way
+```
+
+### Verification
+
+**After deployment, check logs for:**
+```
+INFO:memorygate:Database initialized
+INFO: Uvicorn running on http://0.0.0.0:8080
+```
+
+**Test module consistency:**
+```bash
+# This should work now (was failing before)
+curl -X POST https://memorygate.fly.dev/auth/client \
+  -H "Content-Type: application/json" \
+  -d '{"client_id":"ZEaaiWOQfw","client_secret":"aEVFvb8tXf_Ppy9WbelF1cutjrvEP3Zn"}'
+```
+
+If it still fails with "Database not initialized", there's a deeper module loading issue. But with `uvicorn server:asgi_app`, this should be impossible.
+
+### Summary
+
+**Before:**
+- Dockerfile: `CMD ["python", "server.py"]`
+- Creates `__main__` module
+- `from server import DB` gets different instance
+- SessionLocal is None
+
+**After:**
+- Dockerfile: `CMD ["uvicorn", "server:asgi_app", ...]`
+- Only `server` module exists
+- All imports get same instance
+- SessionLocal is properly initialized
+
+**This is the bulletproof pattern.**
