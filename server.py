@@ -1298,7 +1298,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount OAuth routes
+# Mount OAuth discovery and authorization routes (for Claude Desktop MCP)
+from oauth_discovery import router as oauth_discovery_router
+app.include_router(oauth_discovery_router)
+
+# Mount OAuth user management routes
 from oauth_routes import router as auth_router
 from mcp_auth_gate import MCPAuthGateASGI
 app.include_router(auth_router)
