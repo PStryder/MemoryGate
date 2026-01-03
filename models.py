@@ -161,11 +161,16 @@ class ConceptAlias(Base):
     __tablename__ = "concept_aliases"
     
     alias = Column(String(255), primary_key=True)
+    alias_key = Column(String(255), nullable=False)  # Lowercase for lookups
     concept_id = Column(Integer, ForeignKey("concepts.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     concept = relationship("Concept", back_populates="aliases")
+    
+    __table_args__ = (
+        Index('ix_concept_aliases_alias_key', 'alias_key'),
+    )
 
 
 class ConceptRelationship(Base):
