@@ -18,5 +18,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Run the server
-CMD ["python", "server.py"]
+# Run via uvicorn pointing to module symbol (avoids __main__ module duality)
+CMD ["uvicorn", "server:asgi_app", "--host", "0.0.0.0", "--port", "8080"]

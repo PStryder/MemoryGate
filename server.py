@@ -1337,10 +1337,17 @@ app.mount("/mcp/", MCPAuthGateASGI(mcp_app, lambda: DB.SessionLocal))
 
 
 # =============================================================================
-# Main
+# ASGI Application (module-level for production deployment)
+# =============================================================================
+
+# Wrap entire app with slash normalizer to handle /mcp -> /mcp/
+asgi_app = SlashNormalizerASGI(app)
+
+
+# =============================================================================
+# Main (for local development only)
 # =============================================================================
 
 if __name__ == "__main__":
     print("MemoryGate starting...")
-    # Wrap entire app with slash normalizer to handle /mcp -> /mcp/
-    uvicorn.run(SlashNormalizerASGI(app), host="0.0.0.0", port=8080)
+    uvicorn.run(asgi_app, host="0.0.0.0", port=8080)
