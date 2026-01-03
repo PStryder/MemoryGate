@@ -227,7 +227,7 @@ def memory_search(
                 CASE 
                     WHEN e.source_type = 'observation' THEN o.evidence
                     WHEN e.source_type = 'pattern' THEN p.evidence_observation_ids
-                    WHEN e.source_type = 'concept' THEN c.metadata_
+                    WHEN e.source_type = 'concept' THEN c.metadata
                     WHEN e.source_type = 'document' THEN d.key_concepts
                 END as metadata,
                 CASE 
