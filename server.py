@@ -45,8 +45,11 @@ logger = logging.getLogger("memorygate")
 # Global State
 # =============================================================================
 
-engine = None
-SessionLocal = None
+# Database state holder (avoids global scoping issues)
+class DB:
+    engine = None
+    SessionLocal = None
+
 http_client = None  # Reusable HTTP client for OpenAI API
 
 
@@ -73,15 +76,14 @@ def cleanup_http_client():
 
 def init_db():
     """Initialize database connection and create tables."""
-    global engine, SessionLocal
     
     logger.info("Connecting to database...")
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    SessionLocal = sessionmaker(bind=engine)
+    DB.engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    DB.SessionLocal = sessionmaker(bind=DB.engine)
     
     # FIRST: Ensure pgvector extension exists
     logger.info("Ensuring pgvector extension...")
-    with engine.connect() as conn:
+    with DB.engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.commit()
     
@@ -90,11 +92,11 @@ def init_db():
     
     # THEN: Create tables (which depend on vector type)
     logger.info("Creating tables...")
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(DB.engine)
     
     # Create HNSW index for fast vector search (non-fatal if fails)
     try:
-        with engine.connect() as conn:
+        with DB.engine.connect() as conn:
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS ix_embeddings_vector_hnsw 
                 ON embeddings USING hnsw (embedding vector_cosine_ops)
@@ -1330,8 +1332,8 @@ async def root():
     }
 
 
-# Mount MCP app at /mcp/ with auth gate (SessionLocal injected to avoid import cycle)
-app.mount("/mcp/", MCPAuthGateASGI(mcp_app, SessionLocal))
+# Mount MCP app at /mcp/ with auth gate (pass DB class for dynamic lookup)
+app.mount("/mcp/", MCPAuthGateASGI(mcp_app, lambda: DB.SessionLocal))
 
 
 # =============================================================================

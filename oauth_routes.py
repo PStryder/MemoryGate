@@ -42,9 +42,9 @@ OAUTH_PROVIDERS = {
 def get_db_session():
     """Database dependency"""
     import server  # Import module, not the name
-    if server.SessionLocal is None:
+    if server.DB.SessionLocal is None:
         raise RuntimeError("Database not initialized - SessionLocal is None")
-    db = server.SessionLocal()  # Dynamic lookup
+    db = server.DB.SessionLocal()  # Access via DB class
     try:
         yield db
     finally:

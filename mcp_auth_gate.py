@@ -25,7 +25,7 @@ class MCPAuthGateASGI:
     
     def __init__(self, wrapped_app, session_factory):
         self.wrapped_app = wrapped_app
-        self.SessionLocal = session_factory
+        self.session_factory = session_factory
         self.require_auth = os.environ.get("REQUIRE_MCP_AUTH", "true").lower() == "true"
     
     async def __call__(self, scope, receive, send):
@@ -53,8 +53,9 @@ class MCPAuthGateASGI:
             for k, v in headers.items()
         }
         
-        # Get database session (injected factory, no import cycle)
-        db = self.SessionLocal()
+        # Get database session (session_factory is callable that returns SessionLocal class)
+        SessionLocal = self.session_factory()
+        db = SessionLocal()
         
         try:
             user = verify_request_api_key(db, headers_str)
