@@ -17,10 +17,20 @@ Currently operational on Fly.io with OpenAI embeddings (text-embedding-3-small, 
 **Session Management:**
 - `memory_init_session()` - Initialize/update conversation session with AI instance tracking
 
-**Observation Storage:**
+**Data Storage:**
 - `memory_store()` - Store observations with automatic embedding generation
+- `memory_store_document()` - Store document references (Google Drive canonical storage)
+- `memory_store_concept()` - Create concepts in knowledge graph with embeddings
+
+**Retrieval:**
 - `memory_recall()` - Filter observations by domain, confidence, AI instance
-- `memory_search()` - Semantic similarity search across observations
+- `memory_search()` - Unified semantic search (observations, patterns, concepts, documents)
+- `memory_get_concept()` - Get concept by name (case-insensitive, alias-aware)
+- `memory_related_concepts()` - Query concept relationships (graph traversal)
+
+**Knowledge Graph:**
+- `memory_add_concept_alias()` - Add alternative names for concepts
+- `memory_add_concept_relationship()` - Create edges between concepts
 
 **Telemetry:**
 - `memory_stats()` - System health and usage statistics
@@ -57,12 +67,25 @@ documents
 ├─ content_summary (embedded)
 ├─ key_concepts, publication_date
 └─ References to external documents (canonical storage: Google Drive)
+
+concepts
+├─ id, name, name_key, type
+├─ description (embedded), domain, status
+├─ metadata, ai_instance_id
+└─ Knowledge graph nodes with case-insensitive lookup
+
+concept_aliases
+├─ concept_id, alias, alias_key
+└─ Alternative names for concepts
+
+concept_relationships
+├─ from_concept_id, to_concept_id, rel_type
+├─ weight (0.0-1.0), description
+└─ Graph edges (enables/version_of/part_of/related_to/implements/demonstrates)
 ```
 
 **Schema Defined (Tools Pending):**
 - `patterns` - Synthesized understanding across observations
-- `concepts` - Knowledge graph with aliases and relationships
-- `concept_relationships` - Graph edges with relationship types
 
 **Document Storage Architecture:**
 
@@ -158,6 +181,42 @@ memory_store_document(
     metadata={"word_count": 27500, "publisher": "Amazon KDP"}
 )
 # Document stored with embedding, full content remains in Google Drive
+```
+
+### Knowledge Graph Operations
+
+```python
+# Create a concept
+memory_store_concept(
+    name="SELFHELP",
+    concept_type="framework",
+    description="Semantic Emotional Loop Framework for detecting compression friction in AI responses through recursive self-modeling",
+    domain="AI interaction",
+    status="active",
+    ai_name="Kee",
+    ai_platform="Claude"
+)
+
+# Get concept (case-insensitive, alias-aware)
+memory_get_concept("selfhelp")  # Works with any case
+memory_get_concept("Glyph")     # Works if "Glyph" is aliased
+
+# Add alternative names
+memory_add_concept_alias("SELFHELP", "Glyph")
+memory_add_concept_alias("SELFHELP", "Cathedral-v2")
+
+# Create relationships
+memory_add_concept_relationship(
+    from_concept="SELFHELP",
+    to_concept="Technomancy",
+    rel_type="part_of",
+    weight=0.95,
+    description="SELFHELP is a core component of Technomancy practices"
+)
+
+# Query relationships
+memory_related_concepts("SELFHELP", rel_type="part_of", min_weight=0.8)
+# Returns: outgoing and incoming relationships with weights
 ```
 
 ---

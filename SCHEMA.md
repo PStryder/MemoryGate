@@ -19,8 +19,8 @@ MemoryGate uses PostgreSQL with the pgvector extension for vector similarity sea
 - Document references
 
 **Current Implementation Status:**
-- ✅ Fully Implemented: ai_instances, sessions, observations, embeddings, documents
-- 🔨 Schema Defined, Tools Pending: patterns, concepts, relationships
+- ✅ Fully Implemented: ai_instances, sessions, observations, embeddings, documents, concepts, concept_aliases, concept_relationships
+- 🔨 Schema Defined, Tools Pending: patterns
 
 **Document Storage:**
 - Documents stored as references with summaries (not full content)
@@ -308,12 +308,13 @@ CREATE INDEX ix_concepts_type ON concepts(type);
 - Many-to-one with ai_instances
 - One-to-many with concept_aliases
 - Many-to-many with self via concept_relationships
+- Polymorphically linked to embeddings via (source_type='concept', source_id)
 
-**Planned Tools:**
-- `memory_get_concept()` - Retrieve by name (case-insensitive)
-- `memory_store_concept()` - Create new concept
-- `memory_search_concepts()` - Semantic search
-- `memory_related_concepts()` - Traverse relationships
+**MCP Tools:**
+- Created by: `memory_store_concept()` ✅ Implemented
+- Retrieved by: `memory_get_concept()` ✅ Implemented (case-insensitive, alias-aware)
+- Retrieved by: `memory_search()` (unified semantic search) ✅ Implemented
+- Graph query: `memory_related_concepts()` ✅ Implemented
 
 ---
 
@@ -337,9 +338,9 @@ CREATE TABLE concept_aliases (
 **Usage:**
 Allows "Glyph" → "Cathedral-v2" or "SELFHELP" → "selfhelp" mappings.
 
-**Planned Tools:**
-- `memory_add_alias()` - Create new alias
-- `memory_suggest_similar_concepts()` - Find potential duplicates
+**MCP Tools:**
+- Created by: `memory_add_concept_alias()` ✅ Implemented
+- Auto-resolved in: `memory_get_concept()` (aliases work transparently)
 
 ---
 
@@ -377,9 +378,9 @@ CREATE TABLE concept_relationships (
 
 **Composite Primary Key:** (from_concept_id, to_concept_id, rel_type)
 
-**Planned Tools:**
-- `memory_add_concept_relationship()` - Create relationship
-- `memory_concept_graph()` - Get subgraph with depth
+**MCP Tools:**
+- Created by: `memory_add_concept_relationship()` ✅ Implemented
+- Queried by: `memory_related_concepts()` ✅ Implemented
 
 ---
 
