@@ -41,8 +41,8 @@ OAUTH_PROVIDERS = {
 
 def get_db_session():
     """Database dependency"""
-    from server import SessionLocal
-    db = SessionLocal()
+    import server  # Import module, not the name
+    db = server.SessionLocal()  # Dynamic lookup
     try:
         yield db
     finally:
