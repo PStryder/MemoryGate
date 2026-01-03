@@ -210,7 +210,7 @@ def memory_search(
     Returns:
         List of matching items from all sources with similarity scores and source_type
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         # Generate query embedding
         query_embedding = embed_text_sync(query)
@@ -375,7 +375,7 @@ def memory_store(
     Returns:
         The stored observation with its ID
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         # Get or create AI instance
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
@@ -444,7 +444,7 @@ def memory_recall(
     Returns:
         List of matching observations
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         query = db.query(Observation).join(
             AIInstance, Observation.ai_instance_id == AIInstance.id, isouter=True
@@ -500,7 +500,7 @@ def memory_stats() -> dict:
     Returns:
         Counts and statistics about stored data
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         obs_count = db.query(func.count(Observation.id)).scalar()
         pattern_count = db.query(func.count(Pattern.id)).scalar()
@@ -565,7 +565,7 @@ def memory_init_session(
     Returns:
         Session information
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
         session = get_or_create_session(
@@ -613,7 +613,7 @@ def memory_store_document(
     Returns:
         The stored document with its ID
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         # Parse publication date if provided
         pub_date = None
@@ -689,7 +689,7 @@ def memory_store_concept(
     Returns:
         The stored concept with its ID
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         # Get AI instance if provided
         ai_instance_id = None
@@ -756,7 +756,7 @@ def memory_get_concept(name: str) -> dict:
     Returns:
         Concept details or None if not found
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         name_key = name.lower()
         
@@ -805,7 +805,7 @@ def memory_add_concept_alias(concept_name: str, alias: str) -> dict:
     Returns:
         Status of alias creation
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         from models import ConceptAlias
         
@@ -866,7 +866,7 @@ def memory_add_concept_relationship(
     Returns:
         Status of relationship creation
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         from models import ConceptRelationship
         
@@ -951,7 +951,7 @@ def memory_related_concepts(
     Returns:
         List of related concepts with relationship details
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         from models import ConceptRelationship
         
@@ -1048,7 +1048,7 @@ def memory_update_pattern(
     Returns:
         Pattern with status (created/updated)
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         # Get AI instance and session if provided
         ai_instance_id = None
@@ -1159,7 +1159,7 @@ def memory_get_pattern(category: str, pattern_name: str) -> dict:
     Returns:
         Pattern details or not_found status
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         pattern = db.query(Pattern).filter(
             Pattern.category == category,
@@ -1210,7 +1210,7 @@ def memory_patterns(
     Returns:
         List of matching patterns
     """
-    db = SessionLocal()
+    db = DB.SessionLocal()
     try:
         query = db.query(Pattern)
         
