@@ -1483,8 +1483,7 @@ def memory_bootstrap(ai_name: Optional[str] = None, ai_platform: Optional[str] =
                 
                 # Count observations contributed by this AI
                 obs_count = db.query(Observation).filter(
-                    Observation.ai_name == ai_name,
-                    Observation.ai_platform == ai_platform
+                    Observation.ai_instance_id == ai_instance_query.id
                 ).count()
                 connection_status["total_observations"] = obs_count
         
