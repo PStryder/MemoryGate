@@ -10,3 +10,4 @@ build/
 .eggs/
 *.log
 .DS_Store
+creds.json

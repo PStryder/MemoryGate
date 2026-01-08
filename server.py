@@ -1612,7 +1612,12 @@ app.include_router(auth_router)
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "service": "memorygate"}
+    return {
+        "status": "healthy",
+        "service": "MemoryGate",
+        "version": "0.1.0",
+        "instance_id": os.environ.get("MEMORYGATE_INSTANCE_ID", "memorygate-1")
+    }
 
 
 @app.get("/")
