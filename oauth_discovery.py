@@ -37,6 +37,11 @@ from auth_middleware import hash_api_key, generate_api_key
 OAUTH_ISSUER = os.environ.get("OAUTH_REDIRECT_BASE", "http://localhost:8000")
 OAUTH_CLIENT_ID = os.environ.get("PSTRYDER_DESKTOP", "")
 OAUTH_CLIENT_SECRET = os.environ.get("PSTRYDER_DESKTOP_SECRET", "")
+OAUTH_ALLOWED_REDIRECT_URIS = [
+    uri.strip()
+    for uri in os.environ.get("PSTRYDER_DESKTOP_REDIRECT_URIS", "").split(",")
+    if uri.strip()
+]
 
 AUTH_CODE_TTL_SECONDS = 60  # Auth codes expire in 60 seconds
 
@@ -101,6 +106,13 @@ def validate_authorize_request(
         raise HTTPException(status_code=400, detail="Unknown client_id")
     if not redirect_uri:
         raise HTTPException(status_code=400, detail="Missing redirect_uri")
+    if not OAUTH_ALLOWED_REDIRECT_URIS:
+        raise HTTPException(
+            status_code=500,
+            detail="OAuth redirect URIs not configured"
+        )
+    if redirect_uri not in OAUTH_ALLOWED_REDIRECT_URIS:
+        raise HTTPException(status_code=400, detail="redirect_uri not allowed")
     if not code_challenge:
         raise HTTPException(status_code=400, detail="Missing code_challenge (PKCE required)")
     if code_challenge_method != "S256":
