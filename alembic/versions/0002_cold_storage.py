@@ -20,6 +20,8 @@ def upgrade() -> None:
     bind = op.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
     json_type = postgresql.JSONB if is_postgres else sa.JSON
+    uuid_type = postgresql.UUID(as_uuid=True) if is_postgres else sa.String(length=36)
+    default_false = sa.text("false") if is_postgres else sa.text("0")
     if is_postgres:
         memory_tier_enum = postgresql.ENUM("hot", "cold", name="memory_tier")
         tombstone_action_enum = postgresql.ENUM(
@@ -72,7 +74,7 @@ def upgrade() -> None:
                     "purge_eligible",
                     sa.Boolean(),
                     nullable=False,
-                    server_default=sa.text("false"),
+                    server_default=default_false,
                 ),
             )
             op.create_index(f"ix_{table_name}_tier", table_name, ["tier"])
@@ -107,7 +109,7 @@ def upgrade() -> None:
                         "purge_eligible",
                         sa.Boolean(),
                         nullable=False,
-                        server_default=sa.text("false"),
+                        server_default=default_false,
                     ),
                 )
                 batch_op.create_index(f"ix_{table_name}_tier", ["tier"])
@@ -144,7 +146,7 @@ def upgrade() -> None:
             "purge_eligible",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("false"),
+            server_default=default_false,
         ),
     )
     op.create_index(
@@ -157,7 +159,7 @@ def upgrade() -> None:
 
     op.create_table(
         "memory_tombstones",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", uuid_type, primary_key=True),
         sa.Column("memory_id", sa.String(length=255), nullable=False),
         sa.Column("action", tombstone_action_enum, nullable=False),
         sa.Column("from_tier", memory_tier_enum, nullable=True),

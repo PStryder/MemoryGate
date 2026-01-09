@@ -37,6 +37,12 @@ else:
     EMBEDDING_COLUMN_TYPE = JSON
 
 JSON_TYPE = JSONB if DB_BACKEND == "postgres" else JSON
+UUID_TYPE = UUID(as_uuid=True) if DB_BACKEND == "postgres" else String(36)
+
+
+def _uuid_default() -> str | uuid.UUID:
+    value = uuid.uuid4()
+    return value if DB_BACKEND == "postgres" else str(value)
 
 Base = declarative_base()
 
@@ -341,7 +347,7 @@ class MemorySummary(Base):
 class MemoryTombstone(Base):
     __tablename__ = "memory_tombstones"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
     memory_id = Column(String(255), nullable=False)
     action = Column(Enum(TombstoneAction, name="tombstone_action"), nullable=False)
     from_tier = Column(Enum(MemoryTier, name="memory_tier"))

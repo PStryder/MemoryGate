@@ -10,7 +10,7 @@ services:
       VECTOR_BACKEND: pgvector
       DATABASE_URL: postgresql://memorygate:memorygate@postgres:5432/memorygate
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-none}
       OAUTH_REDIRECT_BASE: http://localhost:8080
       FRONTEND_URL: http://localhost:3000
       REQUIRE_MCP_AUTH: "false"

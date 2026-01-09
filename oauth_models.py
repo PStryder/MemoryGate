@@ -18,13 +18,19 @@ from models import Base  # Import existing Base
 
 DB_BACKEND = os.environ.get("DB_BACKEND", "postgres").strip().lower()
 JSON_TYPE = JSONB if DB_BACKEND == "postgres" else JSON
+UUID_TYPE = UUID(as_uuid=True) if DB_BACKEND == "postgres" else String(36)
+
+
+def _uuid_default():
+    value = uuid.uuid4()
+    return value if DB_BACKEND == "postgres" else str(value)
 
 
 class User(Base):
     """User account - created via OAuth flow"""
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
@@ -113,8 +119,8 @@ class UserSession(Base):
     """Active user sessions"""
     __tablename__ = "user_sessions"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
+    user_id = Column(UUID_TYPE, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Session token (secure random, sent as cookie/header)
     token = Column(String, unique=True, nullable=False, index=True)
@@ -161,8 +167,8 @@ class APIKey(Base):
     """API keys for programmatic access (MCP tools, etc.)"""
     __tablename__ = "api_keys"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
+    user_id = Column(UUID_TYPE, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Key components
     key_prefix = Column(String, nullable=False)  # First 8 chars for identification

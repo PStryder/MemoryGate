@@ -179,6 +179,13 @@ if DB_BACKEND == "sqlite" and VECTOR_BACKEND == "pgvector":
 if DB_BACKEND == "postgres" and VECTOR_BACKEND == "sqlite_vss":
     raise RuntimeError("VECTOR_BACKEND=sqlite_vss requires DB_BACKEND=sqlite")
 
+url_lower = DATABASE_URL.lower()
+is_sqlite_url = url_lower.startswith("sqlite")
+if is_sqlite_url and DB_BACKEND != "sqlite":
+    raise RuntimeError("DATABASE_URL is sqlite but DB_BACKEND is not 'sqlite'")
+if not is_sqlite_url and DB_BACKEND == "sqlite":
+    raise RuntimeError("DB_BACKEND=sqlite requires a sqlite DATABASE_URL")
+
 if TENANCY_MODE != "single":
     raise RuntimeError(
         "Only single-tenant mode is supported. Set MEMORYGATE_TENANCY_MODE=single."
@@ -199,6 +206,9 @@ VECTOR_BACKEND_EFFECTIVE = VECTOR_BACKEND
 if VECTOR_BACKEND == "sqlite_vss":
     VECTOR_BACKEND_EFFECTIVE = "none"
     logger.warning("VECTOR_BACKEND=sqlite_vss is not configured; falling back to keyword search.")
+
+if VECTOR_BACKEND_EFFECTIVE == "pgvector" and EMBEDDING_PROVIDER == "none":
+    raise RuntimeError("VECTOR_BACKEND=pgvector requires EMBEDDING_PROVIDER to be set")
 
 # =============================================================================
 # Global State

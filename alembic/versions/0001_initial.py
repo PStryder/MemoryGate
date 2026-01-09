@@ -23,6 +23,7 @@ def upgrade() -> None:
     is_postgres = bind.dialect.name == "postgresql"
     vector_backend = os.environ.get("VECTOR_BACKEND", "pgvector").strip().lower()
     json_type = postgresql.JSONB if is_postgres else sa.JSON
+    uuid_type = postgresql.UUID(as_uuid=True) if is_postgres else sa.String(length=36)
     embedding_type = sa.JSON
     if is_postgres and vector_backend == "pgvector":
         try:
@@ -176,7 +177,7 @@ def upgrade() -> None:
 
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", uuid_type, primary_key=True),
         sa.Column("email", sa.String(), nullable=False, unique=True),
         sa.Column("name", sa.String(), nullable=True),
         sa.Column("avatar_url", sa.String(), nullable=True),
@@ -222,10 +223,10 @@ def upgrade() -> None:
 
     op.create_table(
         "user_sessions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", uuid_type, primary_key=True),
         sa.Column(
             "user_id",
-            postgresql.UUID(as_uuid=True),
+            uuid_type,
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
@@ -243,10 +244,10 @@ def upgrade() -> None:
 
     op.create_table(
         "api_keys",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", uuid_type, primary_key=True),
         sa.Column(
             "user_id",
-            postgresql.UUID(as_uuid=True),
+            uuid_type,
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),

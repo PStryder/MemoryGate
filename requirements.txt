@@ -17,3 +17,6 @@ httpx
 
 # Password/API key hashing
 bcrypt
+
+# Optional Redis backend for rate limiting
+redis
