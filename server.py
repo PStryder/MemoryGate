@@ -3,10 +3,13 @@ MemoryGate - Persistent Memory-as-a-Service for AI Agents
 MCP Server with PostgreSQL + pgvector backend
 """
 
-import os
+import asyncio
+import json
 import logging
+import os
+import time
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Sequence
 from contextlib import asynccontextmanager
 
 import httpx
@@ -14,6 +17,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import create_engine, text, func, desc
 from sqlalchemy.orm import sessionmaker
 import numpy as np
@@ -22,10 +26,17 @@ from models import (
     Base, AIInstance, Session, Observation, Pattern, 
     Concept, ConceptAlias, ConceptRelationship, Document, Embedding
 )
+from oauth_models import cleanup_expired_sessions, cleanup_expired_states
 from rate_limiter import (
     RateLimitMiddleware,
     build_rate_limiter_from_env,
     load_rate_limit_config_from_env,
+)
+from security_middleware import (
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+    load_request_size_limit_config_from_env,
+    load_security_headers_config_from_env,
 )
 
 # =============================================================================
@@ -46,9 +57,69 @@ EMBEDDING_DIM = 1536
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("memorygate")
 
+def _get_bool(env_name: str, default: bool) -> bool:
+    value = os.environ.get(env_name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_int(env_name: str, default: int) -> int:
+    value = os.environ.get(env_name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _get_float(env_name: str, default: float) -> float:
+    value = os.environ.get(env_name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+# Database initialization controls
+AUTO_CREATE_TABLES = _get_bool("AUTO_CREATE_TABLES", True)
+AUTO_CREATE_EXTENSIONS = _get_bool("AUTO_CREATE_EXTENSIONS", True)
+AUTO_CREATE_INDEXES = _get_bool("AUTO_CREATE_INDEXES", True)
+
+# Cleanup cadence for OAuth state/session tables
+CLEANUP_INTERVAL_SECONDS = _get_int("CLEANUP_INTERVAL_SECONDS", 900)
+
+# Request/input limits
+MAX_RESULT_LIMIT = _get_int("MEMORYGATE_MAX_RESULT_LIMIT", 100)
+MAX_QUERY_LENGTH = _get_int("MEMORYGATE_MAX_QUERY_LENGTH", 4000)
+MAX_TEXT_LENGTH = _get_int("MEMORYGATE_MAX_TEXT_LENGTH", 8000)
+MAX_SHORT_TEXT_LENGTH = _get_int("MEMORYGATE_MAX_SHORT_TEXT_LENGTH", 255)
+MAX_DOMAIN_LENGTH = _get_int("MEMORYGATE_MAX_DOMAIN_LENGTH", 100)
+MAX_TITLE_LENGTH = _get_int("MEMORYGATE_MAX_TITLE_LENGTH", 500)
+MAX_URL_LENGTH = _get_int("MEMORYGATE_MAX_URL_LENGTH", 1000)
+MAX_DOC_TYPE_LENGTH = _get_int("MEMORYGATE_MAX_DOC_TYPE_LENGTH", 50)
+MAX_CONCEPT_TYPE_LENGTH = _get_int("MEMORYGATE_MAX_CONCEPT_TYPE_LENGTH", 50)
+MAX_STATUS_LENGTH = _get_int("MEMORYGATE_MAX_STATUS_LENGTH", 50)
+MAX_METADATA_BYTES = _get_int("MEMORYGATE_MAX_METADATA_BYTES", 20000)
+MAX_LIST_ITEMS = _get_int("MEMORYGATE_MAX_LIST_ITEMS", 50)
+MAX_LIST_ITEM_LENGTH = _get_int("MEMORYGATE_MAX_LIST_ITEM_LENGTH", 1000)
+MAX_EMBEDDING_TEXT_LENGTH = _get_int("MEMORYGATE_MAX_EMBEDDING_TEXT_LENGTH", 8000)
+
+# OpenAI retry/backoff
+EMBEDDING_TIMEOUT_SECONDS = _get_float("EMBEDDING_TIMEOUT_SECONDS", 30.0)
+EMBEDDING_RETRY_MAX = _get_int("EMBEDDING_RETRY_MAX", 2)
+EMBEDDING_RETRY_BACKOFF_SECONDS = _get_float("EMBEDDING_RETRY_BACKOFF_SECONDS", 0.5)
+
 # Rate limiting configuration (optional Redis backend)
 rate_limit_config = load_rate_limit_config_from_env()
 rate_limiter = build_rate_limiter_from_env(rate_limit_config)
+
+# Request size and security headers
+request_size_config = load_request_size_limit_config_from_env()
+security_headers_config = load_security_headers_config_from_env()
 
 # =============================================================================
 # Global State
@@ -60,13 +131,15 @@ class DB:
     SessionLocal = None
 
 http_client = None  # Reusable HTTP client for OpenAI API
+cleanup_task = None  # Background cleanup loop
 
 
 def init_http_client():
     """Initialize HTTP client for OpenAI API calls."""
     global http_client
     http_client = httpx.Client(
-        timeout=30.0,
+        timeout=httpx.Timeout(EMBEDDING_TIMEOUT_SECONDS),
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=100),
         headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "Content-Type": "application/json"
@@ -83,6 +156,28 @@ def cleanup_http_client():
         logger.info("HTTP client closed")
 
 
+async def _run_cleanup_once() -> None:
+    if DB.SessionLocal is None:
+        return
+    db = DB.SessionLocal()
+    try:
+        cleanup_expired_states(db)
+        cleanup_expired_sessions(db)
+    finally:
+        db.close()
+
+
+async def _cleanup_loop() -> None:
+    if CLEANUP_INTERVAL_SECONDS <= 0:
+        return
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        try:
+            await _run_cleanup_once()
+        except Exception as exc:
+            logger.warning(f"Cleanup task error: {exc}")
+
+
 def init_db():
     """Initialize database connection and create tables."""
     
@@ -90,71 +185,180 @@ def init_db():
     DB.engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     DB.SessionLocal = sessionmaker(bind=DB.engine)
     
-    # FIRST: Ensure pgvector extension exists
-    logger.info("Ensuring pgvector extension...")
-    with DB.engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
+    # FIRST: Ensure pgvector extension exists (optional)
+    if AUTO_CREATE_EXTENSIONS:
+        logger.info("Ensuring pgvector extension...")
+        with DB.engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+    else:
+        logger.info("Skipping pgvector extension creation (AUTO_CREATE_EXTENSIONS=false)")
     
     # Import OAuth models to register tables with Base
     import oauth_models  # noqa: F401
     
     # THEN: Create tables (which depend on vector type)
-    logger.info("Creating tables...")
-    Base.metadata.create_all(DB.engine)
+    if AUTO_CREATE_TABLES:
+        logger.info("Creating tables...")
+        Base.metadata.create_all(DB.engine)
+    else:
+        logger.info("Skipping table creation (AUTO_CREATE_TABLES=false)")
     
     # Create HNSW index for fast vector search (non-fatal if fails)
-    try:
-        with DB.engine.connect() as conn:
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS ix_embeddings_vector_hnsw 
-                ON embeddings USING hnsw (embedding vector_cosine_ops)
-            """))
-            conn.commit()
-        logger.info("HNSW index ready")
-    except Exception as e:
-        logger.warning(f"Could not create HNSW index (non-fatal): {e}")
+    if AUTO_CREATE_INDEXES and AUTO_CREATE_TABLES:
+        try:
+            with DB.engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_embeddings_vector_hnsw 
+                    ON embeddings USING hnsw (embedding vector_cosine_ops)
+                """))
+                conn.commit()
+            logger.info("HNSW index ready")
+        except Exception as e:
+            logger.warning(f"Could not create HNSW index (non-fatal): {e}")
+    elif not AUTO_CREATE_INDEXES:
+        logger.info("Skipping index creation (AUTO_CREATE_INDEXES=false)")
+    else:
+        logger.info("Skipping index creation (AUTO_CREATE_TABLES=false)")
     
     logger.info("Database initialized")
 
 
 async def embed_text(text: str) -> List[float]:
     """Generate embedding using OpenAI API."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://api.openai.com/v1/embeddings",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": EMBEDDING_MODEL,
-                "input": text
-            },
-            timeout=30.0
-        )
+    _validate_embedding_text(text)
+    timeout = httpx.Timeout(EMBEDDING_TIMEOUT_SECONDS)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for attempt in range(EMBEDDING_RETRY_MAX + 1):
+            try:
+                response = await client.post(
+                    "https://api.openai.com/v1/embeddings",
+                    headers={
+                        "Authorization": f"Bearer {OPENAI_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": EMBEDDING_MODEL,
+                        "input": text
+                    }
+                )
+            except httpx.RequestError as exc:
+                if attempt >= EMBEDDING_RETRY_MAX:
+                    raise
+                await asyncio.sleep(EMBEDDING_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+                continue
+
+            if response.status_code in {429, 500, 502, 503, 504}:
+                if attempt >= EMBEDDING_RETRY_MAX:
+                    response.raise_for_status()
+                await asyncio.sleep(EMBEDDING_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+            return data["data"][0]["embedding"]
+
+
+def embed_text_sync(text: str) -> List[float]:
+    """Synchronous version of embed_text using pooled HTTP client."""
+    _validate_embedding_text(text)
+    global http_client
+    if http_client is None:
+        init_http_client()
+
+    for attempt in range(EMBEDDING_RETRY_MAX + 1):
+        try:
+            response = http_client.post(
+                "https://api.openai.com/v1/embeddings",
+                json={
+                    "model": EMBEDDING_MODEL,
+                    "input": text
+                }
+            )
+        except httpx.RequestError:
+            if attempt >= EMBEDDING_RETRY_MAX:
+                raise
+            time.sleep(EMBEDDING_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+            continue
+
+        if response.status_code in {429, 500, 502, 503, 504}:
+            if attempt >= EMBEDDING_RETRY_MAX:
+                response.raise_for_status()
+            time.sleep(EMBEDDING_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+            continue
+
         response.raise_for_status()
         data = response.json()
         return data["data"][0]["embedding"]
 
 
-def embed_text_sync(text: str) -> List[float]:
-    """Synchronous version of embed_text using pooled HTTP client."""
-    response = http_client.post(
-        "https://api.openai.com/v1/embeddings",
-        json={
-            "model": EMBEDDING_MODEL,
-            "input": text
-        }
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["data"][0]["embedding"]
-
-
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+def _validate_required_text(value: str, field: str, max_len: int) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    if len(value) > max_len:
+        raise ValueError(f"{field} exceeds max length {max_len}")
+
+
+def _validate_optional_text(value: Optional[str], field: str, max_len: int) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    if len(value) > max_len:
+        raise ValueError(f"{field} exceeds max length {max_len}")
+
+
+def _validate_limit(value: int, field: str, max_value: int) -> None:
+    if value <= 0 or value > max_value:
+        raise ValueError(f"{field} must be between 1 and {max_value}")
+
+
+def _validate_confidence(value: float, field: str) -> None:
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"{field} must be between 0.0 and 1.0")
+
+
+def _validate_list(values: Optional[Sequence], field: str, max_items: int) -> None:
+    if values is None:
+        return
+    if len(values) > max_items:
+        raise ValueError(f"{field} exceeds max items {max_items}")
+
+
+def _validate_string_list(
+    values: Optional[Sequence[str]],
+    field: str,
+    max_items: int,
+    max_item_length: int
+) -> None:
+    if values is None:
+        return
+    if len(values) > max_items:
+        raise ValueError(f"{field} exceeds max items {max_items}")
+    for item in values:
+        if not isinstance(item, str):
+            raise ValueError(f"{field} must contain only strings")
+        if len(item) > max_item_length:
+            raise ValueError(f"{field} item exceeds max length {max_item_length}")
+
+
+def _validate_metadata(metadata: Optional[dict], field: str) -> None:
+    if metadata is None:
+        return
+    try:
+        size = len(json.dumps(metadata))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be JSON-serializable") from exc
+    if size > MAX_METADATA_BYTES:
+        raise ValueError(f"{field} exceeds max size {MAX_METADATA_BYTES} bytes")
+
+
+def _validate_embedding_text(text: str) -> None:
+    _validate_required_text(text, "text", MAX_EMBEDDING_TEXT_LENGTH)
 
 def get_or_create_ai_instance(db, name: str, platform: str) -> AIInstance:
     """Get or create an AI instance by name."""
@@ -219,6 +423,11 @@ def memory_search(
     Returns:
         List of matching items from all sources with similarity scores and source_type
     """
+    _validate_required_text(query, "query", MAX_QUERY_LENGTH)
+    _validate_limit(limit, "limit", MAX_RESULT_LIMIT)
+    _validate_confidence(min_confidence, "min_confidence")
+    _validate_optional_text(domain, "domain", MAX_DOMAIN_LENGTH)
+
     db = DB.SessionLocal()
     try:
         # Generate query embedding
@@ -384,6 +593,15 @@ def memory_store(
     Returns:
         The stored observation with its ID
     """
+    _validate_required_text(observation, "observation", MAX_TEXT_LENGTH)
+    _validate_confidence(confidence, "confidence")
+    _validate_optional_text(domain, "domain", MAX_DOMAIN_LENGTH)
+    _validate_string_list(evidence, "evidence", MAX_LIST_ITEMS, MAX_LIST_ITEM_LENGTH)
+    _validate_required_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(ai_platform, "ai_platform", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(conversation_id, "conversation_id", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(conversation_title, "conversation_title", MAX_TITLE_LENGTH)
+
     db = DB.SessionLocal()
     try:
         # Get or create AI instance
@@ -453,6 +671,11 @@ def memory_recall(
     Returns:
         List of matching observations
     """
+    _validate_optional_text(domain, "domain", MAX_DOMAIN_LENGTH)
+    _validate_confidence(min_confidence, "min_confidence")
+    _validate_limit(limit, "limit", MAX_RESULT_LIMIT)
+    _validate_optional_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         query = db.query(Observation).join(
@@ -574,6 +797,12 @@ def memory_init_session(
     Returns:
         Session information
     """
+    _validate_required_text(conversation_id, "conversation_id", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(title, "title", MAX_TITLE_LENGTH)
+    _validate_required_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(ai_platform, "ai_platform", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(source_url, "source_url", MAX_URL_LENGTH)
+
     db = DB.SessionLocal()
     try:
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
@@ -622,6 +851,14 @@ def memory_store_document(
     Returns:
         The stored document with its ID
     """
+    _validate_required_text(title, "title", MAX_TITLE_LENGTH)
+    _validate_required_text(doc_type, "doc_type", MAX_DOC_TYPE_LENGTH)
+    _validate_required_text(url, "url", MAX_URL_LENGTH)
+    _validate_required_text(content_summary, "content_summary", MAX_TEXT_LENGTH)
+    _validate_string_list(key_concepts, "key_concepts", MAX_LIST_ITEMS, MAX_LIST_ITEM_LENGTH)
+    _validate_optional_text(publication_date, "publication_date", MAX_SHORT_TEXT_LENGTH)
+    _validate_metadata(metadata, "metadata")
+
     db = DB.SessionLocal()
     try:
         # Parse publication date if provided
@@ -698,6 +935,15 @@ def memory_store_concept(
     Returns:
         The stored concept with its ID
     """
+    _validate_required_text(name, "name", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(concept_type, "concept_type", MAX_CONCEPT_TYPE_LENGTH)
+    _validate_required_text(description, "description", MAX_TEXT_LENGTH)
+    _validate_optional_text(domain, "domain", MAX_DOMAIN_LENGTH)
+    _validate_optional_text(status, "status", MAX_STATUS_LENGTH)
+    _validate_metadata(metadata, "metadata")
+    _validate_optional_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(ai_platform, "ai_platform", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         # Get AI instance if provided
@@ -765,6 +1011,8 @@ def memory_get_concept(name: str) -> dict:
     Returns:
         Concept details or None if not found
     """
+    _validate_required_text(name, "name", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         name_key = name.lower()
@@ -814,6 +1062,9 @@ def memory_add_concept_alias(concept_name: str, alias: str) -> dict:
     Returns:
         Status of alias creation
     """
+    _validate_required_text(concept_name, "concept_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(alias, "alias", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         from models import ConceptAlias
@@ -875,6 +1126,11 @@ def memory_add_concept_relationship(
     Returns:
         Status of relationship creation
     """
+    _validate_required_text(from_concept, "from_concept", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(to_concept, "to_concept", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(rel_type, "rel_type", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(description, "description", MAX_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         from models import ConceptRelationship
@@ -960,6 +1216,10 @@ def memory_related_concepts(
     Returns:
         List of related concepts with relationship details
     """
+    _validate_required_text(concept_name, "concept_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(rel_type, "rel_type", MAX_SHORT_TEXT_LENGTH)
+    _validate_confidence(min_weight, "min_weight")
+
     db = DB.SessionLocal()
     try:
         from models import ConceptRelationship
@@ -1057,6 +1317,15 @@ def memory_update_pattern(
     Returns:
         Pattern with status (created/updated)
     """
+    _validate_required_text(category, "category", MAX_DOMAIN_LENGTH)
+    _validate_required_text(pattern_name, "pattern_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_required_text(pattern_text, "pattern_text", MAX_TEXT_LENGTH)
+    _validate_confidence(confidence, "confidence")
+    _validate_list(evidence_observation_ids, "evidence_observation_ids", MAX_LIST_ITEMS)
+    _validate_optional_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(ai_platform, "ai_platform", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(conversation_id, "conversation_id", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         # Get AI instance and session if provided
@@ -1168,6 +1437,9 @@ def memory_get_pattern(category: str, pattern_name: str) -> dict:
     Returns:
         Pattern details or not_found status
     """
+    _validate_required_text(category, "category", MAX_DOMAIN_LENGTH)
+    _validate_required_text(pattern_name, "pattern_name", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         pattern = db.query(Pattern).filter(
@@ -1219,6 +1491,10 @@ def memory_patterns(
     Returns:
         List of matching patterns
     """
+    _validate_optional_text(category, "category", MAX_DOMAIN_LENGTH)
+    _validate_confidence(min_confidence, "min_confidence")
+    _validate_limit(limit, "limit", MAX_RESULT_LIMIT)
+
     db = DB.SessionLocal()
     try:
         query = db.query(Pattern)
@@ -1316,6 +1592,10 @@ def memory_user_guide(
     Returns:
         Dictionary with spec_version, guide content, structured metadata
     """
+    if format not in {"markdown", "json"}:
+        raise ValueError("format must be 'markdown' or 'json'")
+    if verbosity not in {"short", "verbose"}:
+        raise ValueError("verbosity must be 'short' or 'verbose'")
     
     guide_content = """# MemoryGate User Guide
 
@@ -1451,6 +1731,9 @@ def memory_bootstrap(ai_name: Optional[str] = None, ai_platform: Optional[str] =
     Returns:
         Relationship status, version info, and usage guide
     """
+    _validate_optional_text(ai_name, "ai_name", MAX_SHORT_TEXT_LENGTH)
+    _validate_optional_text(ai_platform, "ai_platform", MAX_SHORT_TEXT_LENGTH)
+
     db = DB.SessionLocal()
     try:
         # Check if this AI instance has history
@@ -1586,9 +1869,19 @@ class SlashNormalizerASGI:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize on startup, cleanup on shutdown."""
+    global cleanup_task
     init_db()
     init_http_client()
+    if CLEANUP_INTERVAL_SECONDS > 0:
+        await _run_cleanup_once()
+        cleanup_task = asyncio.create_task(_cleanup_loop())
     yield
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
     cleanup_http_client()
     if rate_limiter:
         await rate_limiter.close()
@@ -1596,12 +1889,33 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MemoryGate", redirect_slashes=False, lifespan=lifespan)
 
+# Request size limits (keep CORS outermost to add headers on 413 responses)
+app.add_middleware(
+    RequestSizeLimitMiddleware,
+    config=request_size_config,
+)
+
 # Rate limiting middleware (outer CORS will still add headers on 429 responses)
 app.add_middleware(
     RateLimitMiddleware,
     limiter=rate_limiter,
     config=rate_limit_config,
 )
+
+# Security headers (applies to all responses)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    config=security_headers_config,
+)
+
+# Optional host allowlist for production deployments
+trusted_hosts_env = os.environ.get("TRUSTED_HOSTS", "")
+trusted_hosts = [host.strip() for host in trusted_hosts_env.split(",") if host.strip()]
+if trusted_hosts:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=trusted_hosts,
+    )
 
 # Add CORS middleware
 app.add_middleware(

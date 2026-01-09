@@ -427,6 +427,18 @@ export RATE_LIMIT_AUTH_WINDOW_SECONDS="60"
 # For distributed rate limiting, install redis and set:
 # export RATE_LIMIT_REDIS_URL="redis://localhost:6379/0"
 
+# Optional hardening (defaults shown)
+export REQUEST_SIZE_LIMIT_ENABLED="true"
+export MAX_REQUEST_BODY_BYTES="262144"
+export MEMORYGATE_MAX_RESULT_LIMIT="100"
+export MEMORYGATE_MAX_QUERY_LENGTH="4000"
+export MEMORYGATE_MAX_TEXT_LENGTH="8000"
+export EMBEDDING_TIMEOUT_SECONDS="30"
+export EMBEDDING_RETRY_MAX="2"
+export EMBEDDING_RETRY_BACKOFF_SECONDS="0.5"
+# export SECURITY_HEADERS_ENABLE_HSTS="true"
+# export TRUSTED_HOSTS="memorygate.ai,localhost"
+
 # Run server
 python server.py
 # Or: uvicorn server:asgi_app --host 0.0.0.0 --port 8080
@@ -444,6 +456,14 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
 Server auto-creates all tables and indexes on startup.
+
+### Production Hardening Notes
+
+- For production DBs, set `AUTO_CREATE_TABLES=false` and manage schema changes with Alembic migrations.
+- Generate and apply migrations with `alembic revision --autogenerate -m "..."` and `alembic upgrade head`.
+- Enable security headers and HSTS for HTTPS deployments (`SECURITY_HEADERS_*`).
+- Configure trusted proxies before honoring `X-Forwarded-For` (`RATE_LIMIT_TRUSTED_PROXY_COUNT` or `RATE_LIMIT_TRUSTED_PROXY_IPS`).
+- Adjust request limits (`MAX_REQUEST_BODY_BYTES`, `MEMORYGATE_MAX_*`) based on your traffic profile.
 
 ---
 

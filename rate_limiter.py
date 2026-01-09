@@ -35,6 +35,8 @@ class RateLimitConfig:
     api_key: RateLimitRule
     auth_ip: RateLimitRule
     max_cache_entries: int
+    trusted_proxy_count: int
+    trusted_proxy_ips: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,12 @@ def load_rate_limit_config_from_env() -> RateLimitConfig:
     auth_ip_limit = _get_int("RATE_LIMIT_AUTH_PER_IP", 10)
     auth_ip_window = _get_int("RATE_LIMIT_AUTH_WINDOW_SECONDS", 60)
     max_cache_entries = _get_int("RATE_LIMIT_MAX_CACHE_ENTRIES", 10000)
+    trusted_proxy_count = _get_int("RATE_LIMIT_TRUSTED_PROXY_COUNT", 0)
+    trusted_proxy_ips = tuple(
+        ip.strip()
+        for ip in os.environ.get("RATE_LIMIT_TRUSTED_PROXY_IPS", "").split(",")
+        if ip.strip()
+    )
 
     return RateLimitConfig(
         enabled=enabled,
@@ -79,6 +87,8 @@ def load_rate_limit_config_from_env() -> RateLimitConfig:
         api_key=RateLimitRule(limit=api_key_limit, window_seconds=api_key_window),
         auth_ip=RateLimitRule(limit=auth_ip_limit, window_seconds=auth_ip_window),
         max_cache_entries=max_cache_entries,
+        trusted_proxy_count=trusted_proxy_count,
+        trusted_proxy_ips=trusted_proxy_ips,
     )
 
 
@@ -232,18 +242,39 @@ class RateLimitMiddleware:
             for k, v in headers
         }
 
-    @staticmethod
-    def _get_client_ip(scope, headers: Dict[str, str]) -> str:
-        forwarded_for = headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        real_ip = headers.get("x-real-ip")
-        if real_ip:
-            return real_ip.strip()
+    def _get_client_ip(self, scope, headers: Dict[str, str]) -> str:
         client = scope.get("client")
-        if client:
-            return client[0]
+        client_ip = client[0] if client else ""
+
+        forwarded_for = headers.get("x-forwarded-for")
+        if forwarded_for and self._is_trusted_proxy(client_ip):
+            forwarded_ip = self._select_forwarded_ip(forwarded_for)
+            if forwarded_ip:
+                return forwarded_ip
+
+        real_ip = headers.get("x-real-ip")
+        if real_ip and self._is_trusted_proxy(client_ip):
+            return real_ip.strip()
+
+        if client_ip:
+            return client_ip
         return "unknown"
+
+    def _is_trusted_proxy(self, client_ip: str) -> bool:
+        if self.config.trusted_proxy_count > 0:
+            return True
+        if self.config.trusted_proxy_ips and client_ip:
+            return client_ip in self.config.trusted_proxy_ips
+        return False
+
+    def _select_forwarded_ip(self, forwarded_for: str) -> Optional[str]:
+        ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        if not ips:
+            return None
+        if self.config.trusted_proxy_count > 0:
+            index = max(0, len(ips) - self.config.trusted_proxy_count - 1)
+            return ips[index]
+        return ips[0]
 
     @staticmethod
     def _extract_api_key_prefix(headers: Dict[str, str]) -> Optional[str]:
