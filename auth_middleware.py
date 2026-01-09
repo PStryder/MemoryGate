@@ -98,11 +98,15 @@ def verify_request_api_key(db: Session, headers: dict) -> Optional[User]:
     if not api_key_obj.is_valid:
         return None
     
+    user = api_key_obj.user
+    if not user or not user.is_active:
+        return None
+
     # Update usage tracking
     api_key_obj.increment_usage()
     db.commit()
     
-    return api_key_obj.user
+    return user
 
 
 
@@ -168,11 +172,15 @@ async def get_current_user_from_api_key(
     if not api_key_obj.is_valid:
         return None
     
+    user = api_key_obj.user
+    if not user or not user.is_active:
+        return None
+
     # Update usage tracking
     api_key_obj.increment_usage()
     db.commit()
     
-    return api_key_obj.user
+    return user
 
 
 async def get_current_user(

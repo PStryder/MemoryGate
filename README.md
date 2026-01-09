@@ -416,6 +416,17 @@ export OPENAI_API_KEY="sk-..."
 export PSTRYDER_DESKTOP="test-client"
 export PSTRYDER_DESKTOP_SECRET="test-secret"
 
+# Optional rate limiting (defaults shown)
+export RATE_LIMIT_ENABLED="true"
+export RATE_LIMIT_GLOBAL_PER_IP="120"
+export RATE_LIMIT_GLOBAL_WINDOW_SECONDS="60"
+export RATE_LIMIT_API_KEY_PER_KEY="600"
+export RATE_LIMIT_API_KEY_WINDOW_SECONDS="60"
+export RATE_LIMIT_AUTH_PER_IP="10"
+export RATE_LIMIT_AUTH_WINDOW_SECONDS="60"
+# For distributed rate limiting, install redis and set:
+# export RATE_LIMIT_REDIS_URL="redis://localhost:6379/0"
+
 # Run server
 python server.py
 # Or: uvicorn server:asgi_app --host 0.0.0.0 --port 8080

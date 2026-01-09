@@ -22,6 +22,11 @@ from models import (
     Base, AIInstance, Session, Observation, Pattern, 
     Concept, ConceptAlias, ConceptRelationship, Document, Embedding
 )
+from rate_limiter import (
+    RateLimitMiddleware,
+    build_rate_limiter_from_env,
+    load_rate_limit_config_from_env,
+)
 
 # =============================================================================
 # Configuration
@@ -40,6 +45,10 @@ EMBEDDING_DIM = 1536
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("memorygate")
+
+# Rate limiting configuration (optional Redis backend)
+rate_limit_config = load_rate_limit_config_from_env()
+rate_limiter = build_rate_limiter_from_env(rate_limit_config)
 
 # =============================================================================
 # Global State
@@ -1581,9 +1590,18 @@ async def lifespan(app: FastAPI):
     init_http_client()
     yield
     cleanup_http_client()
+    if rate_limiter:
+        await rate_limiter.close()
 
 
 app = FastAPI(title="MemoryGate", redirect_slashes=False, lifespan=lifespan)
+
+# Rate limiting middleware (outer CORS will still add headers on 429 responses)
+app.add_middleware(
+    RateLimitMiddleware,
+    limiter=rate_limiter,
+    config=rate_limit_config,
+)
 
 # Add CORS middleware
 app.add_middleware(
