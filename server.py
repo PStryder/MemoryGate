@@ -700,7 +700,11 @@ def _store_embedding(
 ) -> None:
     if not _vector_search_enabled():
         return
-    embedding_vector = _embed_or_raise(text_value)
+    try:
+        embedding_vector = embed_text_sync(text_value)
+    except EmbeddingProviderError:
+        logger.warning("Embedding unavailable; skipping embedding store")
+        return
     if replace:
         db.query(Embedding).filter(
             Embedding.source_type == source_type,
