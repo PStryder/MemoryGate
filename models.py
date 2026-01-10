@@ -134,7 +134,7 @@ class Observation(Base):
     last_accessed_at = Column(DateTime(timezone=True))
 
     # Tiering & retention
-    tier = Column(Enum(MemoryTier, name="memory_tier"), default=MemoryTier.hot, nullable=False)
+    tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False), default=MemoryTier.hot, nullable=False)
     archived_at = Column(DateTime(timezone=True))
     archived_reason = Column(Text)
     archived_by = Column(String(100))
@@ -179,7 +179,7 @@ class Pattern(Base):
     last_accessed_at = Column(DateTime(timezone=True))
 
     # Tiering & retention
-    tier = Column(Enum(MemoryTier, name="memory_tier"), default=MemoryTier.hot, nullable=False)
+    tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False), default=MemoryTier.hot, nullable=False)
     archived_at = Column(DateTime(timezone=True))
     archived_reason = Column(Text)
     archived_by = Column(String(100))
@@ -224,7 +224,7 @@ class Concept(Base):
     last_accessed_at = Column(DateTime(timezone=True))
 
     # Tiering & retention
-    tier = Column(Enum(MemoryTier, name="memory_tier"), default=MemoryTier.hot, nullable=False)
+    tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False), default=MemoryTier.hot, nullable=False)
     archived_at = Column(DateTime(timezone=True))
     archived_reason = Column(Text)
     archived_by = Column(String(100))
@@ -296,7 +296,7 @@ class Document(Base):
     last_accessed_at = Column(DateTime(timezone=True))
 
     # Tiering & retention
-    tier = Column(Enum(MemoryTier, name="memory_tier"), default=MemoryTier.hot, nullable=False)
+    tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False), default=MemoryTier.hot, nullable=False)
     archived_at = Column(DateTime(timezone=True))
     archived_reason = Column(Text)
     archived_by = Column(String(100))
@@ -331,7 +331,7 @@ class MemorySummary(Base):
     last_accessed_at = Column(DateTime(timezone=True))
 
     # Tiering & retention
-    tier = Column(Enum(MemoryTier, name="memory_tier"), default=MemoryTier.hot, nullable=False)
+    tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False), default=MemoryTier.hot, nullable=False)
     archived_at = Column(DateTime(timezone=True))
     archived_reason = Column(Text)
     archived_by = Column(String(100))
@@ -355,9 +355,9 @@ class MemoryTombstone(Base):
 
     id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
     memory_id = Column(String(255), nullable=False)
-    action = Column(Enum(TombstoneAction, name="tombstone_action"), nullable=False)
-    from_tier = Column(Enum(MemoryTier, name="memory_tier"))
-    to_tier = Column(Enum(MemoryTier, name="memory_tier"))
+    action = Column(Enum(TombstoneAction, name="tombstone_action", create_type=False), nullable=False)
+    from_tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False))
+    to_tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False))
     reason = Column(Text)
     actor = Column(String(100))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

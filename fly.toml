@@ -26,6 +26,10 @@ primary_region = "iad"
 [deploy]
   release_command = "alembic upgrade head"
 
+[mounts]
+  source = "data_volume"
+  destination = "/data"
+
 [[vm]]
   memory = "2gb"
   cpu_kind = "shared"

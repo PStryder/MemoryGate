@@ -1,8 +1,12 @@
 import os
+import sys
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+# Add parent directory to path for Docker
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from models import Base
 import oauth_models  # noqa: F401

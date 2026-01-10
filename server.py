@@ -23,7 +23,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import create_engine, text, func, desc, case, and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-import numpy as np
 
 from models import (
     Base, AIInstance, Session, Observation, Pattern, 

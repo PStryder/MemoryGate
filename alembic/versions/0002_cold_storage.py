@@ -23,10 +23,11 @@ def upgrade() -> None:
     uuid_type = postgresql.UUID(as_uuid=True) if is_postgres else sa.String(length=36)
     default_false = sa.text("false") if is_postgres else sa.text("0")
     if is_postgres:
-        memory_tier_enum = postgresql.ENUM("hot", "cold", name="memory_tier")
+        memory_tier_enum = postgresql.ENUM("hot", "cold", name="memory_tier", create_type=False)
         tombstone_action_enum = postgresql.ENUM(
-            "archived", "rehydrated", "purged", "summarized", name="tombstone_action"
+            "archived", "rehydrated", "purged", "summarized", name="tombstone_action", create_type=False
         )
+        # Now manually create the types
         memory_tier_enum.create(bind, checkfirst=True)
         tombstone_action_enum.create(bind, checkfirst=True)
     else:

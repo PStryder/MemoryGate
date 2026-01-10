@@ -17,8 +17,11 @@ services:
       AUTO_MIGRATE_ON_STARTUP: "false"
       RATE_LIMIT_REDIS_URL: redis://redis:6379/0
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: on-failure
     command: ["migrate-and-serve"]
 
   postgres:
@@ -31,6 +34,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memorygate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine

@@ -3,18 +3,12 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-os.environ.setdefault("DB_BACKEND", "sqlite")
-os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-google-secret")
 os.environ.setdefault("OAUTH_REDIRECT_BASE", "http://localhost:8080")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
 
-from models import Base  # noqa: E402
-import oauth_models  # noqa: F401,E402
 from oauth import OAuthUserInfo  # noqa: E402
 from oauth_models import OAuthState, User, UserSession  # noqa: E402
 import server  # noqa: E402
@@ -42,10 +36,11 @@ class StubProvider:
         )
 
 
-def _build_client(monkeypatch):
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
+def test_oauth_login_creates_state_and_redirect(monkeypatch, db_engine):
+    """Test OAuth login flow creates state and redirects correctly."""
+    from sqlalchemy.orm import sessionmaker
+    
+    SessionLocal = sessionmaker(bind=db_engine)
     server.DB.SessionLocal = SessionLocal
 
     monkeypatch.setattr(
@@ -56,11 +51,7 @@ def _build_client(monkeypatch):
 
     app = FastAPI()
     app.include_router(oauth_routes.router)
-    return TestClient(app), SessionLocal
-
-
-def test_oauth_login_creates_state_and_redirect(monkeypatch):
-    client, SessionLocal = _build_client(monkeypatch)
+    client = TestClient(app)
 
     response = client.get("/auth/login/google")
     assert response.status_code == 302
@@ -76,8 +67,14 @@ def test_oauth_login_creates_state_and_redirect(monkeypatch):
         db.close()
 
 
-def test_oauth_callback_happy_path(monkeypatch):
-    client, SessionLocal = _build_client(monkeypatch)
+def test_oauth_callback_happy_path(monkeypatch, db_engine):
+    """Test OAuth callback successfully creates user and session."""
+    from sqlalchemy.orm import sessionmaker
+    
+    SessionLocal = sessionmaker(bind=db_engine)
+    server.DB.SessionLocal = SessionLocal
+
+    # Setup test data
     db = SessionLocal()
     try:
         oauth_state = OAuthState(
@@ -91,6 +88,16 @@ def test_oauth_callback_happy_path(monkeypatch):
         db.commit()
     finally:
         db.close()
+
+    monkeypatch.setattr(
+        oauth_routes.OAuthProviderFactory,
+        "create_provider",
+        lambda *_args, **_kwargs: StubProvider(),
+    )
+
+    app = FastAPI()
+    app.include_router(oauth_routes.router)
+    client = TestClient(app)
 
     response = client.get("/auth/callback/google", params={"code": "abc", "state": "state-123"})
     assert response.status_code == 302
@@ -106,8 +113,14 @@ def test_oauth_callback_happy_path(monkeypatch):
         db.close()
 
 
-def test_oauth_callback_rejects_expired_state(monkeypatch):
-    client, SessionLocal = _build_client(monkeypatch)
+def test_oauth_callback_rejects_expired_state(monkeypatch, db_engine):
+    """Test OAuth callback rejects expired state tokens."""
+    from sqlalchemy.orm import sessionmaker
+    
+    SessionLocal = sessionmaker(bind=db_engine)
+    server.DB.SessionLocal = SessionLocal
+
+    # Setup expired state
     db = SessionLocal()
     try:
         oauth_state = OAuthState(
@@ -121,6 +134,16 @@ def test_oauth_callback_rejects_expired_state(monkeypatch):
         db.commit()
     finally:
         db.close()
+
+    monkeypatch.setattr(
+        oauth_routes.OAuthProviderFactory,
+        "create_provider",
+        lambda *_args, **_kwargs: StubProvider(),
+    )
+
+    app = FastAPI()
+    app.include_router(oauth_routes.router)
+    client = TestClient(app)
 
     response = client.get(
         "/auth/callback/google",
