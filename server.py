@@ -131,6 +131,9 @@ EMBEDDING_FAILURE_THRESHOLD = _get_int("EMBEDDING_FAILURE_THRESHOLD", 5)
 EMBEDDING_COOLDOWN_SECONDS = _get_int("EMBEDDING_COOLDOWN_SECONDS", 60)
 EMBEDDING_HEALTHCHECK_ENABLED = _get_bool("EMBEDDING_HEALTHCHECK_ENABLED", True)
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "openai").strip().lower()
+EMBEDDING_BACKFILL_ENABLED = _get_bool("EMBEDDING_BACKFILL_ENABLED", True)
+EMBEDDING_BACKFILL_INTERVAL_SECONDS = _get_int("EMBEDDING_BACKFILL_INTERVAL_SECONDS", 300)
+EMBEDDING_BACKFILL_BATCH_LIMIT = _get_int("EMBEDDING_BACKFILL_BATCH_LIMIT", 50)
 
 # Retention & scoring
 SCORE_BUMP_ALPHA = _get_float("SCORE_BUMP_ALPHA", 0.4)
@@ -248,6 +251,7 @@ class DB:
 http_client = None  # Reusable HTTP client for OpenAI API
 cleanup_task = None  # Background cleanup loop
 retention_task = None  # Background retention loop
+embedding_backfill_task = None  # Background embedding backfill loop
 
 
 def _get_alembic_config():
@@ -697,14 +701,14 @@ def _store_embedding(
     source_id: int,
     text_value: str,
     replace: bool = False,
-) -> None:
+) -> bool:
     if not _vector_search_enabled():
-        return
+        return False
     try:
         embedding_vector = embed_text_sync(text_value)
     except EmbeddingProviderError:
         logger.warning("Embedding unavailable; skipping embedding store")
-        return
+        return False
     if replace:
         db.query(Embedding).filter(
             Embedding.source_type == source_type,
@@ -718,7 +722,12 @@ def _store_embedding(
         normalized=True,
     )
     db.add(emb)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
 
 
 # =============================================================================
@@ -1290,6 +1299,89 @@ def _search_memory_impl(
         }
     finally:
         db.close()
+
+
+def _run_embedding_backfill() -> dict:
+    if DB.SessionLocal is None:
+        return {"status": "skipped", "reason": "db_not_initialized"}
+    if not _vector_search_enabled():
+        return {"status": "skipped", "reason": "vector_disabled"}
+    if EMBEDDING_PROVIDER == "none":
+        return {"status": "skipped", "reason": "embedding_disabled"}
+    if embedding_circuit_breaker.is_open():
+        return {"status": "skipped", "reason": "circuit_open"}
+    if EMBEDDING_BACKFILL_BATCH_LIMIT <= 0:
+        return {"status": "skipped", "reason": "batch_limit_disabled"}
+
+    db = DB.SessionLocal()
+    processed = 0
+    backfilled = 0
+    skipped = 0
+    try:
+        candidates = [
+            ("observation", Observation, "observation"),
+            ("pattern", Pattern, "pattern_text"),
+            ("concept", Concept, "description"),
+            ("document", Document, "content_summary"),
+        ]
+        for source_type, model, field in candidates:
+            if processed >= EMBEDDING_BACKFILL_BATCH_LIMIT:
+                break
+            missing = (
+                db.query(model)
+                .outerjoin(
+                    Embedding,
+                    and_(
+                        Embedding.source_type == source_type,
+                        Embedding.source_id == model.id,
+                    ),
+                )
+                .filter(Embedding.source_id.is_(None))
+                .order_by(model.id.asc())
+                .limit(EMBEDDING_BACKFILL_BATCH_LIMIT - processed)
+                .all()
+            )
+            for record in missing:
+                if processed >= EMBEDDING_BACKFILL_BATCH_LIMIT:
+                    break
+                if embedding_circuit_breaker.is_open():
+                    return {
+                        "status": "skipped",
+                        "reason": "circuit_open",
+                        "processed": processed,
+                        "backfilled": backfilled,
+                        "skipped_count": skipped,
+                    }
+                processed += 1
+                text_value = getattr(record, field, None)
+                if not text_value:
+                    skipped += 1
+                    continue
+                if _store_embedding(db, source_type, record.id, text_value):
+                    backfilled += 1
+                else:
+                    skipped += 1
+        return {
+            "status": "ok",
+            "processed": processed,
+            "backfilled": backfilled,
+            "skipped_count": skipped,
+        }
+    finally:
+        db.close()
+
+
+async def _embedding_backfill_loop() -> None:
+    if EMBEDDING_BACKFILL_INTERVAL_SECONDS <= 0:
+        return
+    while True:
+        await asyncio.sleep(EMBEDDING_BACKFILL_INTERVAL_SECONDS)
+        try:
+            stats = await asyncio.to_thread(_run_embedding_backfill)
+            if stats.get("status") == "ok" and stats.get("backfilled", 0) > 0:
+                logger.info("Embedding backfill complete", extra=stats)
+        except Exception as exc:
+            logger.warning(f"Embedding backfill error: {exc}")
 
 
 def _search_memory_keyword_impl(
@@ -3233,7 +3325,7 @@ class SlashNormalizerASGI:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize on startup, cleanup on shutdown."""
-    global cleanup_task, retention_task
+    global cleanup_task, retention_task, embedding_backfill_task
     init_db()
     init_http_client()
     if CLEANUP_INTERVAL_SECONDS > 0:
@@ -3241,6 +3333,10 @@ async def lifespan(app: FastAPI):
         cleanup_task = asyncio.create_task(_cleanup_loop())
     if RETENTION_TICK_SECONDS > 0:
         retention_task = asyncio.create_task(_retention_loop())
+    if EMBEDDING_BACKFILL_ENABLED:
+        await asyncio.to_thread(_run_embedding_backfill)
+        if EMBEDDING_BACKFILL_INTERVAL_SECONDS > 0:
+            embedding_backfill_task = asyncio.create_task(_embedding_backfill_loop())
     yield
     if retention_task:
         retention_task.cancel()
@@ -3252,6 +3348,12 @@ async def lifespan(app: FastAPI):
         cleanup_task.cancel()
         try:
             await cleanup_task
+        except asyncio.CancelledError:
+            pass
+    if embedding_backfill_task:
+        embedding_backfill_task.cancel()
+        try:
+            await embedding_backfill_task
         except asyncio.CancelledError:
             pass
     cleanup_http_client()
