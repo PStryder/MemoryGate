@@ -143,9 +143,10 @@ class InMemoryRateLimiter(RateLimiter):
 
 
 class RedisRateLimiter(RateLimiter):
-    def __init__(self, redis_client, key_prefix: str = "rl"):
+    def __init__(self, redis_client, key_prefix: str = "rl", fallback: RateLimiter | None = None):
         self._redis = redis_client
         self._key_prefix = key_prefix
+        self._fallback = fallback
 
     async def allow(self, key: str, rule: RateLimitRule) -> RateLimitResult:
         now = time.time()
@@ -153,11 +154,16 @@ class RedisRateLimiter(RateLimiter):
         window_id = int(now // window_seconds)
         reset = int((window_id + 1) * window_seconds)
         redis_key = f"{self._key_prefix}:{key}:{window_id}"
-
-        pipeline = self._redis.pipeline()
-        pipeline.incr(redis_key, 1)
-        pipeline.expireat(redis_key, reset)
-        count, _ = await pipeline.execute()
+        try:
+            pipeline = self._redis.pipeline()
+            pipeline.incr(redis_key, 1)
+            pipeline.expireat(redis_key, reset)
+            count, _ = await pipeline.execute()
+        except Exception:
+            if self._fallback:
+                logger.warning("Redis rate limiter unavailable; falling back to in-memory limiter")
+                return await self._fallback.allow(key, rule)
+            raise
 
         count = int(count)
         remaining = max(0, rule.limit - count)
@@ -177,6 +183,8 @@ class RedisRateLimiter(RateLimiter):
                 await result
         except Exception:
             return None
+        if self._fallback:
+            await self._fallback.close()
 
 
 def build_rate_limiter_from_env(config: RateLimitConfig) -> RateLimiter:
@@ -185,7 +193,8 @@ def build_rate_limiter_from_env(config: RateLimitConfig) -> RateLimiter:
     if redis_url and redis_async is not None:
         client = redis_async.from_url(redis_url)
         logger.info("Rate limiting using Redis backend")
-        return RedisRateLimiter(client)
+        fallback = InMemoryRateLimiter(max_entries=config.max_cache_entries)
+        return RedisRateLimiter(client, fallback=fallback)
     if redis_url and redis_async is None:
         logger.warning(
             "RATE_LIMIT_REDIS_URL set but redis package not installed; using in-memory limiter"
