@@ -38,6 +38,7 @@ def test_global_ip_limit_blocks_after_limit():
         max_cache_entries=100,
         trusted_proxy_count=0,
         trusted_proxy_ips=(),
+        redis_fail_open=True,
     )
     app = build_app(config)
     client = TestClient(app)
@@ -60,6 +61,7 @@ def test_api_key_limit_isolated_by_key():
         max_cache_entries=100,
         trusted_proxy_count=0,
         trusted_proxy_ips=(),
+        redis_fail_open=True,
     )
     app = build_app(config)
     client = TestClient(app)
@@ -81,6 +83,7 @@ def test_auth_path_has_stricter_limit():
         max_cache_entries=100,
         trusted_proxy_count=0,
         trusted_proxy_ips=(),
+        redis_fail_open=True,
     )
     app = build_app(config)
     client = TestClient(app)
@@ -100,6 +103,7 @@ def test_untrusted_proxy_ignores_forwarded_for():
         max_cache_entries=100,
         trusted_proxy_count=0,
         trusted_proxy_ips=(),
+        redis_fail_open=True,
     )
     app = build_app(config)
     client = TestClient(app)
@@ -120,6 +124,7 @@ def test_trusted_proxy_uses_forwarded_for():
         max_cache_entries=100,
         trusted_proxy_count=1,
         trusted_proxy_ips=(),
+        redis_fail_open=True,
     )
     app = build_app(config)
     client = TestClient(app)

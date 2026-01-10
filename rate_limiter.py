@@ -37,6 +37,7 @@ class RateLimitConfig:
     max_cache_entries: int
     trusted_proxy_count: int
     trusted_proxy_ips: Tuple[str, ...]
+    redis_fail_open: bool
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def load_rate_limit_config_from_env() -> RateLimitConfig:
     auth_ip_window = _get_int("RATE_LIMIT_AUTH_WINDOW_SECONDS", 60)
     max_cache_entries = _get_int("RATE_LIMIT_MAX_CACHE_ENTRIES", 10000)
     trusted_proxy_count = _get_int("RATE_LIMIT_TRUSTED_PROXY_COUNT", 0)
+    redis_fail_open = _get_bool("RATE_LIMIT_REDIS_FAIL_OPEN", True)
     trusted_proxy_ips = tuple(
         ip.strip()
         for ip in os.environ.get("RATE_LIMIT_TRUSTED_PROXY_IPS", "").split(",")
@@ -89,6 +91,7 @@ def load_rate_limit_config_from_env() -> RateLimitConfig:
         max_cache_entries=max_cache_entries,
         trusted_proxy_count=trusted_proxy_count,
         trusted_proxy_ips=trusted_proxy_ips,
+        redis_fail_open=redis_fail_open,
     )
 
 
@@ -163,7 +166,13 @@ class RedisRateLimiter(RateLimiter):
             if self._fallback:
                 logger.warning("Redis rate limiter unavailable; falling back to in-memory limiter")
                 return await self._fallback.allow(key, rule)
-            raise
+            logger.warning("Redis rate limiter unavailable; failing closed")
+            return RateLimitResult(
+                allowed=False,
+                remaining=0,
+                reset_epoch=int(now + window_seconds),
+                limit=rule.limit,
+            )
 
         count = int(count)
         remaining = max(0, rule.limit - count)
@@ -193,7 +202,9 @@ def build_rate_limiter_from_env(config: RateLimitConfig) -> RateLimiter:
     if redis_url and redis_async is not None:
         client = redis_async.from_url(redis_url)
         logger.info("Rate limiting using Redis backend")
-        fallback = InMemoryRateLimiter(max_entries=config.max_cache_entries)
+        fallback = None
+        if config.redis_fail_open:
+            fallback = InMemoryRateLimiter(max_entries=config.max_cache_entries)
         return RedisRateLimiter(client, fallback=fallback)
     if redis_url and redis_async is None:
         logger.warning(
