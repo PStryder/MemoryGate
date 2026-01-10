@@ -20,6 +20,7 @@ primary_region = "iad"
 
 [env]
   AUTO_MIGRATE_ON_STARTUP = "false"
+  AUTO_CREATE_EXTENSIONS = "false"
 
 [deploy]
   release_command = "alembic upgrade head"
