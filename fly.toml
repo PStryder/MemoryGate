@@ -21,6 +21,7 @@ primary_region = "iad"
 [env]
   AUTO_MIGRATE_ON_STARTUP = "false"
   AUTO_CREATE_EXTENSIONS = "false"
+  RATE_LIMIT_TRUSTED_PROXY_COUNT = "1"
 
 [deploy]
   release_command = "alembic upgrade head"
