@@ -423,9 +423,17 @@ async def revoke_api_key(
 ):
     """Revoke an API key"""
     from uuid import UUID
-    
+
+    try:
+        key_uuid = UUID(key_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API key id"
+        )
+
     api_key = db.query(APIKey).filter(
-        APIKey.id == UUID(key_id),
+        APIKey.id == key_uuid,
         APIKey.user_id == user.id
     ).first()
     
