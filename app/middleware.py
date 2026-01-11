@@ -58,14 +58,20 @@ def configure_middleware(app):
         )
 
     # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
+    cors_allowed_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    if cors_allowed_env.strip():
+        allow_origins = [origin.strip() for origin in cors_allowed_env.split(",") if origin.strip()]
+    else:
+        allow_origins = [
             os.environ.get("FRONTEND_URL", "http://localhost:3000"),
             "http://localhost:3000",
             "https://memorygate.ai",
             "https://www.memorygate.ai",
-        ],
+        ]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

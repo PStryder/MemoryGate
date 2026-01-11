@@ -13,7 +13,7 @@ from core.config import (
     MAX_SHORT_TEXT_LENGTH,
     MAX_TEXT_LENGTH,
 )
-from core.services.memory_service import memory_store_concept, memory_update_pattern
+from core.services.memory_service import memory_store, memory_store_concept, memory_update_pattern
 
 
 def _create_observations(db_session, count: int) -> list[int]:
@@ -164,5 +164,29 @@ def test_memory_store_concept_allows_unicode(server_db):
         name="CaféConcept",
         concept_type="project",
         description="Unicode description",
+    )
+    assert result["status"] == "stored"
+
+
+def test_memory_store_rejects_missing_evidence_ids(server_db):
+    result = memory_store(
+        observation="Evidence validation missing",
+        evidence=["999999"],
+        confidence=0.9,
+    )
+    assert result["status"] == "error"
+    assert result["error_type"] == "validation_error"
+    assert result["field"] == "evidence_observation_ids"
+
+
+def test_memory_store_accepts_existing_evidence_ids(server_db):
+    seed = memory_store(
+        observation="Evidence validation seed",
+        confidence=0.9,
+    )
+    result = memory_store(
+        observation="Evidence validation valid",
+        evidence=[str(seed["id"])],
+        confidence=0.9,
     )
     assert result["status"] == "stored"

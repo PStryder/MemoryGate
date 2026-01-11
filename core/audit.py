@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from sqlalchemy import and_, or_
 
+import core.config as config
 from core.models import AuditEvent
 
 ALLOWED_ACTOR_TYPES = {"user", "org_admin", "system", "integration", "mcp"}
@@ -111,6 +112,7 @@ def log_event(
     event = AuditEvent(
         created_at=datetime.utcnow(),
         event_type=event_type,
+        tenant_id=org_id or config.DEFAULT_TENANT_ID,
         actor_type=actor_type,
         actor_id=actor_id,
         org_id=org_id,
@@ -192,6 +194,7 @@ def list_audit_events(
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "event_type": row.event_type,
                 "event_version": row.event_version,
+                "tenant_id": row.tenant_id,
                 "actor_type": row.actor_type,
                 "actor_id": row.actor_id,
                 "org_id": row.org_id,

@@ -10,6 +10,7 @@ from typing import Optional, List
 
 from sqlalchemy import and_, func, or_
 
+import core.config as config
 from core.context import RequestContext
 from core.audit import ALLOWED_ACTOR_TYPES, log_event
 from core.audit_constants import (
@@ -210,6 +211,7 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
     if mem_type == "observation":
         return {
             "id": record.id,
+            "tenant_id": record.tenant_id,
             "timestamp": _serialize_datetime(record.timestamp),
             "observation": record.observation,
             "confidence": record.confidence,
@@ -230,6 +232,7 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
     if mem_type == "pattern":
         return {
             "id": record.id,
+            "tenant_id": record.tenant_id,
             "category": record.category,
             "pattern_name": record.pattern_name,
             "pattern_text": record.pattern_text,
@@ -287,6 +290,7 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
         }
         return {
             "id": record.id,
+            "tenant_id": record.tenant_id,
             "name": record.name,
             "name_key": record.name_key,
             "type": record.type,
@@ -311,6 +315,7 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
     if mem_type == "document":
         return {
             "id": record.id,
+            "tenant_id": record.tenant_id,
             "title": record.title,
             "doc_type": record.doc_type,
             "content_summary": record.content_summary,
@@ -332,6 +337,7 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
     if mem_type == "summary":
         return {
             "id": record.id,
+            "tenant_id": record.tenant_id,
             "source_type": record.source_type,
             "source_id": record.source_id,
             "source_ids": record.source_ids,
@@ -374,6 +380,7 @@ def _archive_cold_record_to_store(
     size_estimate = _estimate_archive_size(mem_type, payload)
     tier_value = record.tier.value if isinstance(record.tier, MemoryTier) else record.tier
     archive_row = ArchivedMemory(
+        tenant_id=record.tenant_id,
         source_type=mem_type,
         source_id=record.id,
         payload=payload,
@@ -427,6 +434,7 @@ def _restore_archived_record(
 
         summary = MemorySummary(
             id=source_id,
+            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
             source_type=payload.get("source_type"),
             source_id=payload.get("source_id"),
             source_ids=payload.get("source_ids") or [],
@@ -476,6 +484,7 @@ def _restore_archived_record(
     if mem_type == "observation":
         record = Observation(
             id=source_id,
+            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
             timestamp=_deserialize_datetime(payload.get("timestamp")),
             observation=payload.get("observation"),
             confidence=payload.get("confidence", 0.8),
@@ -496,6 +505,7 @@ def _restore_archived_record(
     elif mem_type == "pattern":
         record = Pattern(
             id=source_id,
+            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
             category=payload.get("category") or "",
             pattern_name=payload.get("pattern_name") or "",
             pattern_text=payload.get("pattern_text") or "",
@@ -517,6 +527,7 @@ def _restore_archived_record(
     elif mem_type == "concept":
         record = Concept(
             id=source_id,
+            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
             name=payload.get("name") or "",
             name_key=payload.get("name_key") or (payload.get("name") or "").lower(),
             type=payload.get("type") or "",
@@ -539,6 +550,7 @@ def _restore_archived_record(
     else:
         record = Document(
             id=source_id,
+            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
             title=payload.get("title") or "",
             doc_type=payload.get("doc_type") or "",
             content_summary=payload.get("content_summary"),
@@ -583,6 +595,7 @@ def _restore_archived_record(
                 continue
             db.add(ConceptAlias(
                 concept_id=record.id,
+                tenant_id=record.tenant_id,
                 alias=alias.get("alias"),
                 alias_key=alias_key,
                 created_at=_deserialize_datetime(alias.get("created_at")),
@@ -608,6 +621,7 @@ def _restore_archived_record(
                 from_concept_id=record.id,
                 to_concept_id=to_id,
                 rel_type=rel_type,
+                tenant_id=record.tenant_id,
                 weight=rel.get("weight", 0.5),
                 description=rel.get("description"),
                 created_at=_deserialize_datetime(rel.get("created_at")),
@@ -632,6 +646,7 @@ def _restore_archived_record(
                 from_concept_id=from_id,
                 to_concept_id=record.id,
                 rel_type=rel_type,
+                tenant_id=record.tenant_id,
                 weight=rel.get("weight", 0.5),
                 description=rel.get("description"),
                 created_at=_deserialize_datetime(rel.get("created_at")),

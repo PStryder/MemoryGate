@@ -17,6 +17,7 @@ import core.config as config
 
 DB_BACKEND_EFFECTIVE = config.DB_BACKEND_EFFECTIVE
 VECTOR_BACKEND_EFFECTIVE = config.VECTOR_BACKEND_EFFECTIVE
+DEFAULT_TENANT_ID = config.DEFAULT_TENANT_ID
 
 try:
     from pgvector.sqlalchemy import Vector as PgVector
@@ -68,6 +69,7 @@ class AIInstance(Base):
     __tablename__ = "ai_instances"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     name = Column(String(100), unique=True, nullable=False)  # "Kee", "Hexy"
     platform = Column(String(100), nullable=False)  # "Claude", "ChatGPT"
     description = Column(Text)
@@ -88,6 +90,7 @@ class Session(Base):
     __tablename__ = "sessions"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     conversation_id = Column(String(255), unique=True)  # UUID from chat URL
     title = Column(String(500))
     ai_instance_id = Column(Integer, ForeignKey("ai_instances.id"))
@@ -111,6 +114,7 @@ class Observation(Base):
     __tablename__ = "observations"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow)
     observation = Column(Text, nullable=False)
     confidence = Column(Float, default=0.8)
@@ -155,6 +159,7 @@ class Pattern(Base):
     __tablename__ = "patterns"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     category = Column(String(100), nullable=False)
     pattern_name = Column(String(255), nullable=False)
     pattern_text = Column(Text, nullable=False)
@@ -184,7 +189,7 @@ class Pattern(Base):
     ai_instance = relationship("AIInstance", back_populates="patterns")
     
     __table_args__ = (
-        UniqueConstraint('category', 'pattern_name', name='uq_pattern_category_name'),
+        UniqueConstraint('tenant_id', 'category', 'pattern_name', name='uq_patterns_tenant_category_name'),
         Index('ix_patterns_category', 'category'),
         Index('ix_patterns_tier', 'tier'),
         Index('ix_patterns_score', 'score'),
@@ -199,6 +204,7 @@ class Concept(Base):
     __tablename__ = "concepts"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     name = Column(String(255), nullable=False)  # Original case preserved
     name_key = Column(String(255), nullable=False)  # Lowercase for lookups
     type = Column(String(50), nullable=False)  # project/framework/component/construct/theory
@@ -229,6 +235,7 @@ class Concept(Base):
     aliases = relationship("ConceptAlias", back_populates="concept", cascade="all, delete-orphan")
     
     __table_args__ = (
+        UniqueConstraint('tenant_id', 'name_key', name='uq_concepts_tenant_name_key'),
         Index('ix_concepts_name_key', 'name_key'),
         Index('ix_concepts_type', 'type'),
         Index('ix_concepts_tier', 'tier'),
@@ -240,6 +247,7 @@ class ConceptAlias(Base):
     __tablename__ = "concept_aliases"
     
     alias = Column(String(255), primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     alias_key = Column(String(255), nullable=False)  # Lowercase for lookups
     concept_id = Column(Integer, ForeignKey("concepts.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -258,6 +266,7 @@ class ConceptRelationship(Base):
     from_concept_id = Column(Integer, ForeignKey("concepts.id"), primary_key=True)
     to_concept_id = Column(Integer, ForeignKey("concepts.id"), primary_key=True)
     rel_type = Column(String(50), primary_key=True)  # enables/version_of/part_of/related_to/implements/demonstrates
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     weight = Column(Float, default=0.5)
     description = Column(Text)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -275,6 +284,7 @@ class Document(Base):
     __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     title = Column(String(500), nullable=False)
     doc_type = Column(String(50), nullable=False)
     content_summary = Column(Text)
@@ -311,6 +321,7 @@ class MemorySummary(Base):
     __tablename__ = "memory_summaries"
 
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     source_type = Column(String(50), nullable=False)
     source_id = Column(Integer, nullable=True)
     source_ids = Column(JSON_TYPE, default=list)
@@ -346,6 +357,7 @@ class MemoryTombstone(Base):
     __tablename__ = "memory_tombstones"
 
     id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     memory_id = Column(String(255), nullable=False)
     action = Column(Enum(TombstoneAction, name="tombstone_action", create_type=False), nullable=False)
     from_tier = Column(Enum(MemoryTier, name="memory_tier", create_type=False))
@@ -369,6 +381,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     event_id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     event_type = Column(String(100), nullable=False)
     event_version = Column(Integer, default=1, nullable=False)
@@ -399,6 +412,7 @@ class ArchivedMemory(Base):
     __tablename__ = "archived_memories"
 
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     source_type = Column(String(50), nullable=False)  # observation/pattern/concept/document/summary
     source_id = Column(Integer, nullable=True)
     payload = Column(JSON_TYPE, nullable=False)
@@ -428,6 +442,7 @@ class Embedding(Base):
     source_type = Column(String(50), primary_key=True)  # observation/pattern/concept/document
     source_id = Column(Integer, primary_key=True)
     model_version = Column(String(100), primary_key=True, default="all-MiniLM-L6-v2")
+    tenant_id = Column(String(100), nullable=False, default=DEFAULT_TENANT_ID, server_default=DEFAULT_TENANT_ID)
     embedding = Column(EMBEDDING_COLUMN_TYPE, nullable=False)  # OpenAI text-embedding-3-small
     normalized = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

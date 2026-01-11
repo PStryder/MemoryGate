@@ -16,6 +16,14 @@ Fields (summary):
 - `target_type` is one of `memory`, `summary`, `account`, `org`, `key`, `export`.
 - `target_ids` contains IDs only (never content).
 
+Canonical event types (see `core/audit_constants.py`):
+
+- `memory.archived`
+- `memory.rehydrated`
+- `memory.purged_to_archive`
+- `memory.restored_from_archive`
+- `retention.archive_evicted`
+
 Metadata safety:
 
 - Disallowed metadata keys: `content`, `observation`, `description`, `pattern_text`,

@@ -19,6 +19,7 @@ from core.services.memory_shared import (
     _validate_confidence,
     _validate_string_list,
     _validate_metadata,
+    _validate_evidence_observation_ids,
     MAX_TEXT_LENGTH,
     MAX_DOMAIN_LENGTH,
     MAX_LIST_ITEMS,
@@ -117,6 +118,14 @@ def memory_store(
 
     db = DB.SessionLocal()
     try:
+        evidence_ids: list[int] = []
+        if evidence:
+            for item in evidence:
+                if isinstance(item, str) and item.strip().isdigit():
+                    evidence_ids.append(int(item.strip()))
+        if evidence_ids and len(evidence_ids) == len(evidence):
+            _validate_evidence_observation_ids(db, evidence_ids)
+
         # Get or create AI instance
         ai_instance = get_or_create_ai_instance(db, ai_name, ai_platform)
         
