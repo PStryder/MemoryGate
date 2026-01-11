@@ -20,3 +20,6 @@ class RequestContext:
     auth: AuthContext
     request_id: Optional[str] = None
     source: Optional[str] = None
+
+
+__all__ = ["AuthContext", "RequestContext"]
