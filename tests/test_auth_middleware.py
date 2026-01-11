@@ -5,7 +5,7 @@ os.environ.setdefault("DB_BACKEND", "sqlite")
 os.environ.setdefault("VECTOR_BACKEND", "none")
 
 from oauth_models import User, APIKey  # noqa: E402
-from auth_middleware import hash_api_key, verify_request_api_key  # noqa: E402
+from app.auth import hash_api_key, verify_request_api_key  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
 

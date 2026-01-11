@@ -9,8 +9,9 @@ os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("REQUIRE_MCP_AUTH", "false")
 os.environ.setdefault("EMBEDDING_PROVIDER", "none")
 
-from models import Concept, Observation
-from server import app, mcp_stream_app
+from core.models import Concept, Observation
+from app.main import app
+from core.mcp import mcp_stream_app
 
 
 @dataclass

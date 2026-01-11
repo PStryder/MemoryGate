@@ -9,7 +9,7 @@ import os
 import json
 from typing import Callable, Awaitable, Optional
 
-from auth_middleware import verify_request_api_key
+from app.auth import verify_request_api_key
 
 
 class MCPAuthGateASGI:

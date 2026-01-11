@@ -4,7 +4,7 @@ os.environ.setdefault("DB_BACKEND", "sqlite")
 os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("REQUIRE_MCP_AUTH", "false")
 
-from server import (
+from core.services.memory_service import (
     memory_add_concept_alias,
     memory_add_concept_relationship,
     memory_related_concepts,

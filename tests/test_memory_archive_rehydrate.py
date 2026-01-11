@@ -4,8 +4,8 @@ os.environ.setdefault("DB_BACKEND", "sqlite")
 os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("REQUIRE_MCP_AUTH", "false")
 
-from models import MemoryTombstone, Observation, MemoryTier
-from server import archive_memory, memory_recall, memory_store, rehydrate_memory
+from core.models import MemoryTombstone, Observation, MemoryTier
+from core.services.memory_service import archive_memory, memory_recall, memory_store, rehydrate_memory
 
 
 def test_archive_rehydrate_lifecycle(server_db, db_session):

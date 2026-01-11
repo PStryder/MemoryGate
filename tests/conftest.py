@@ -18,10 +18,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Import Base first
-from models import Base
+from core.models import Base
 
 # Import ALL model modules to register tables with Base.metadata
-import models  # noqa: F401
+import core.models  # noqa: F401
 import oauth_models  # noqa: F401
 
 # Import specific classes to ensure they're registered
@@ -67,7 +67,7 @@ def db_session(db_engine):
 @pytest.fixture
 def server_db(db_engine):
     """Bind server.DB to the in-memory engine for tool-level tests."""
-    from server import DB
+    from core.db import DB
 
     SessionLocal = sessionmaker(bind=db_engine)
     previous_engine = DB.engine

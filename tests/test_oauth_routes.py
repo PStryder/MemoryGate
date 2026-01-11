@@ -11,8 +11,8 @@ os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
 
 from oauth import OAuthUserInfo  # noqa: E402
 from oauth_models import OAuthState, User, UserSession  # noqa: E402
-import server  # noqa: E402
-import oauth_routes  # noqa: E402
+from core.db import DB  # noqa: E402
+import app.routes.oauth_routes as oauth_routes  # noqa: E402
 
 
 class StubProvider:
@@ -41,7 +41,7 @@ def test_oauth_login_creates_state_and_redirect(monkeypatch, db_engine):
     from sqlalchemy.orm import sessionmaker
     
     SessionLocal = sessionmaker(bind=db_engine)
-    server.DB.SessionLocal = SessionLocal
+    DB.SessionLocal = SessionLocal
 
     monkeypatch.setattr(
         oauth_routes.OAuthProviderFactory,
@@ -51,7 +51,7 @@ def test_oauth_login_creates_state_and_redirect(monkeypatch, db_engine):
 
     app = FastAPI()
     app.include_router(oauth_routes.router)
-    client = TestClient(app)
+    client = TestClient(app, follow_redirects=False)
 
     response = client.get("/auth/login/google")
     assert response.status_code == 302
@@ -72,7 +72,7 @@ def test_oauth_callback_happy_path(monkeypatch, db_engine):
     from sqlalchemy.orm import sessionmaker
     
     SessionLocal = sessionmaker(bind=db_engine)
-    server.DB.SessionLocal = SessionLocal
+    DB.SessionLocal = SessionLocal
 
     # Setup test data
     db = SessionLocal()
@@ -97,7 +97,7 @@ def test_oauth_callback_happy_path(monkeypatch, db_engine):
 
     app = FastAPI()
     app.include_router(oauth_routes.router)
-    client = TestClient(app)
+    client = TestClient(app, follow_redirects=False)
 
     response = client.get("/auth/callback/google", params={"code": "abc", "state": "state-123"})
     assert response.status_code == 302
@@ -118,7 +118,7 @@ def test_oauth_callback_rejects_expired_state(monkeypatch, db_engine):
     from sqlalchemy.orm import sessionmaker
     
     SessionLocal = sessionmaker(bind=db_engine)
-    server.DB.SessionLocal = SessionLocal
+    DB.SessionLocal = SessionLocal
 
     # Setup expired state
     db = SessionLocal()
@@ -143,7 +143,7 @@ def test_oauth_callback_rejects_expired_state(monkeypatch, db_engine):
 
     app = FastAPI()
     app.include_router(oauth_routes.router)
-    client = TestClient(app)
+    client = TestClient(app, follow_redirects=False)
 
     response = client.get(
         "/auth/callback/google",

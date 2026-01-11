@@ -6,15 +6,14 @@ os.environ.setdefault("DB_BACKEND", "sqlite")
 os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("REQUIRE_MCP_AUTH", "false")
 
-from models import Observation
-from server import (
+from core.models import Observation
+from core.config import (
     MAX_METADATA_BYTES,
     MAX_RELATIONSHIP_ITEMS,
     MAX_SHORT_TEXT_LENGTH,
     MAX_TEXT_LENGTH,
-    memory_store_concept,
-    memory_update_pattern,
 )
+from core.services.memory_service import memory_store_concept, memory_update_pattern
 
 
 def _create_observations(db_session, count: int) -> list[int]:

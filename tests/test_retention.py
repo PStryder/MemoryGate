@@ -1,6 +1,6 @@
 import pytest
 
-from retention import apply_decay_tick, apply_fetch_bump, apply_floor, clamp_score
+from core.services.retention_service import apply_decay_tick, apply_fetch_bump, apply_floor, clamp_score
 
 
 def test_clamp_score_bounds():

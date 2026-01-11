@@ -9,11 +9,11 @@ case "$mode" in
     alembic upgrade head
     ;;
   serve)
-    exec uvicorn server:asgi_app --host 0.0.0.0 --port "${PORT:-8080}" "$@"
+    exec uvicorn app.main:asgi_app --host 0.0.0.0 --port "${PORT:-8080}" "$@"
     ;;
   migrate-and-serve)
     alembic upgrade head
-    exec uvicorn server:asgi_app --host 0.0.0.0 --port "${PORT:-8080}" "$@"
+    exec uvicorn app.main:asgi_app --host 0.0.0.0 --port "${PORT:-8080}" "$@"
     ;;
   *)
     exec "$mode" "$@"
