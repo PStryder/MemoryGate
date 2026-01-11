@@ -29,12 +29,6 @@ from mcp_auth_gate import MCPAuthGateASGI
 from oauth_models import cleanup_expired_sessions, cleanup_expired_states
 
 
-rate_limiter = None
-cleanup_task = None
-retention_task = None
-embedding_backfill_task = None
-
-
 async def _run_cleanup_once() -> None:
     if DB.SessionLocal is None:
         return
@@ -71,34 +65,38 @@ async def _retention_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize on startup, cleanup on shutdown."""
-    global cleanup_task, retention_task, embedding_backfill_task, rate_limiter
     init_db()
     memory_service.init_http_client()
     if config.CLEANUP_INTERVAL_SECONDS > 0:
         await _run_cleanup_once()
-        cleanup_task = asyncio.create_task(_cleanup_loop())
+        app.state.cleanup_task = asyncio.create_task(_cleanup_loop())
     if config.RETENTION_TICK_SECONDS > 0:
-        retention_task = asyncio.create_task(_retention_loop())
+        app.state.retention_task = asyncio.create_task(_retention_loop())
     if config.EMBEDDING_BACKFILL_ENABLED:
         await asyncio.to_thread(memory_service._run_embedding_backfill)
         if config.EMBEDDING_BACKFILL_INTERVAL_SECONDS > 0:
-            embedding_backfill_task = asyncio.create_task(memory_service._embedding_backfill_loop())
+            app.state.embedding_backfill_task = asyncio.create_task(
+                memory_service._embedding_backfill_loop()
+            )
     try:
         async with mcp_stream_app.lifespan(mcp_stream_app):
             yield
     finally:
+        retention_task = getattr(app.state, "retention_task", None)
         if retention_task:
             retention_task.cancel()
             try:
                 await retention_task
             except asyncio.CancelledError:
                 pass
+        cleanup_task = getattr(app.state, "cleanup_task", None)
         if cleanup_task:
             cleanup_task.cancel()
             try:
                 await cleanup_task
             except asyncio.CancelledError:
                 pass
+        embedding_backfill_task = getattr(app.state, "embedding_backfill_task", None)
         if embedding_backfill_task:
             embedding_backfill_task.cancel()
             try:
@@ -106,6 +104,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         memory_service.cleanup_http_client()
+        rate_limiter = getattr(app.state, "rate_limiter", None)
         if rate_limiter:
             await rate_limiter.close()
         if DB.engine:
@@ -113,7 +112,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MemoryGate", redirect_slashes=False, lifespan=lifespan)
-rate_limiter = configure_middleware(app)
+app.state.cleanup_task = None
+app.state.retention_task = None
+app.state.embedding_backfill_task = None
+app.state.rate_limiter = configure_middleware(app)
 
 # Mount OAuth discovery and authorization routes (for Claude Desktop MCP)
 app.include_router(oauth_discovery_router)
