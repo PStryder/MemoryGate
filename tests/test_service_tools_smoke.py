@@ -97,13 +97,16 @@ def test_service_tools_smoke(server_db):
         category="smoke",
         include_cold=True,
     )
-    assert pattern_list["status"] == "ok"
+    assert "count" in pattern_list
+    assert pattern_list["count"] >= 1
 
     guide = memory_service.memory_user_guide(format="markdown", verbosity="short")
-    assert guide["status"] == "ok"
+    assert "spec_version" in guide
+    assert "guide" in guide
 
     bootstrap = memory_service.memory_bootstrap(ai_name="Kee", ai_platform="Claude")
-    assert bootstrap["status"] == "ok"
+    assert "spec_version" in bootstrap
+    assert "connection_status" in bootstrap
 
     search = memory_service.memory_search(
         query="Service tool smoke observation",
