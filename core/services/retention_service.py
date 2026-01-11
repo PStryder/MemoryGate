@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy import case, func, or_
 
 import core.config as config
+from core.audit import log_event
 from core.db import DB
 from core.models import (
     Concept,
@@ -143,6 +144,7 @@ def apply_decay_to_model(
 
 def summarize_and_archive(db) -> dict:
     archived = 0
+    archived_ids: list[str] = []
     summaries_created = 0
     reason = "auto_summarize"
     for mem_type, model in MEMORY_MODELS.items():
@@ -195,6 +197,19 @@ def summarize_and_archive(db) -> dict:
                 actor="system",
             )
             archived += 1
+            archived_ids.append(serialize_memory_id(mem_type, record.id))
+
+    if archived_ids:
+        log_event(
+            db,
+            event_type="memory.archived",
+            actor_type="system",
+            target_type="memory",
+            target_ids=archived_ids,
+            count_affected=archived,
+            reason=reason,
+            metadata={"source": "retention_tick", "mode": "summarize"},
+        )
 
     db.commit()
     return {"archived": archived, "summaries_created": summaries_created}
@@ -205,6 +220,8 @@ def purge_cold_records(db) -> dict:
     marked = 0
     skipped = 0
     reason = "retention_purge"
+    purged_ids: list[str] = []
+    purged_summary_ids: list[int] = []
 
     from core.services.memory_archive import _archive_cold_record_to_store, _enforce_archive_quota
 
@@ -255,6 +272,7 @@ def purge_cold_records(db) -> dict:
                 metadata={"mode": "archive"},
             )
             purged += 1
+            purged_ids.append(serialize_memory_id(mem_type, record.id))
 
     # Purge summaries into archive store
     summaries = (
@@ -298,6 +316,30 @@ def purge_cold_records(db) -> dict:
             metadata={"mode": "archive"},
         )
         purged += 1
+        purged_summary_ids.append(summary.id)
+
+    if purged_ids:
+        log_event(
+            db,
+            event_type="memory.purged_to_archive",
+            actor_type="system",
+            target_type="memory",
+            target_ids=purged_ids,
+            count_affected=len(purged_ids),
+            reason=reason,
+            metadata={"source": "retention_tick"},
+        )
+    if purged_summary_ids:
+        log_event(
+            db,
+            event_type="memory.purged_to_archive",
+            actor_type="system",
+            target_type="summary",
+            target_ids=purged_summary_ids,
+            count_affected=len(purged_summary_ids),
+            reason=reason,
+            metadata={"source": "retention_tick"},
+        )
 
     db.commit()
     quota_stats = _enforce_archive_quota(db) if purged else {"evicted": 0}

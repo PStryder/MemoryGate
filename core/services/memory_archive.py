@@ -11,6 +11,7 @@ from typing import Optional, List
 from sqlalchemy import and_, func, or_
 
 from core.context import RequestContext
+from core.audit import ALLOWED_ACTOR_TYPES, log_event
 from core.db import DB
 from core.errors import ValidationIssue
 from core.models import (
@@ -54,6 +55,62 @@ from core.services.memory_shared import (
 )
 
 ARCHIVE_SOURCE_TYPES = set(MEMORY_MODELS.keys()) | {"summary"}
+
+
+def _resolve_audit_actor(
+    context: Optional[RequestContext],
+    actor_label: Optional[str],
+) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]:
+    actor_value = (actor_label or "").strip()
+    normalized = actor_value.lower() if actor_value else ""
+    if normalized in ALLOWED_ACTOR_TYPES:
+        actor_type = normalized
+        actor_id = None
+    else:
+        actor_type = "integration"
+        actor_id = actor_value or None
+    org_id = None
+    user_id = None
+    request_id = None
+    if context:
+        if context.auth:
+            if context.auth.tenant_id:
+                org_id = str(context.auth.tenant_id)
+            if context.auth.user_id is not None:
+                user_id = str(context.auth.user_id)
+        request_id = context.request_id
+    return actor_type, actor_id, org_id, user_id, request_id
+
+
+def _log_audit_event(
+    db,
+    *,
+    event_type: str,
+    target_type: str,
+    target_ids: list,
+    count_affected: int,
+    reason: Optional[str],
+    actor_label: Optional[str],
+    context: Optional[RequestContext],
+    metadata: Optional[dict] = None,
+) -> None:
+    if not target_ids:
+        return
+    actor_type, actor_id, org_id, user_id, request_id = _resolve_audit_actor(context, actor_label)
+    log_event(
+        db,
+        event_type=event_type,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        org_id=org_id,
+        user_id=user_id,
+        target_type=target_type,
+        target_ids=target_ids,
+        count_affected=count_affected,
+        reason=reason,
+        request_id=request_id,
+        metadata=metadata,
+    )
 
 
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -722,6 +779,8 @@ def archive_memory(
             }
 
         archived_ids = []
+        archived_memory_ids = []
+        archived_summary_ids = []
         already_archived_ids = []
         tombstones_written = 0
         summaries_created = 0
@@ -762,10 +821,12 @@ def archive_memory(
             record.archived_reason = reason
             record.archived_by = actor_name
             record.purge_eligible = False
-            archived_ids.append(_serialize_memory_id(mem_type, record.id))
+            archived_id = _serialize_memory_id(mem_type, record.id)
+            archived_ids.append(archived_id)
+            archived_memory_ids.append(archived_id)
             _write_tombstone(
                 db,
-                _serialize_memory_id(mem_type, record.id),
+                archived_id,
                 TombstoneAction.archived,
                 from_tier=MemoryTier.hot,
                 to_tier=MemoryTier.cold,
@@ -784,6 +845,7 @@ def archive_memory(
             summary.archived_by = actor_name
             summary.purge_eligible = False
             archived_ids.append(f"summary:{summary.id}")
+            archived_summary_ids.append(summary.id)
             _write_tombstone(
                 db,
                 f"summary:{summary.id}",
@@ -794,6 +856,29 @@ def archive_memory(
                 actor=actor_name,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
+
+        _log_audit_event(
+            db,
+            event_type="memory.archived",
+            target_type="memory",
+            target_ids=archived_memory_ids,
+            count_affected=len(archived_memory_ids),
+            reason=reason,
+            actor_label=actor_name,
+            context=context,
+            metadata={"mode": mode},
+        )
+        _log_audit_event(
+            db,
+            event_type="memory.archived",
+            target_type="summary",
+            target_ids=archived_summary_ids,
+            count_affected=len(archived_summary_ids),
+            reason=reason,
+            actor_label=actor_name,
+            context=context,
+            metadata={"mode": mode},
+        )
 
         db.commit()
 
@@ -913,6 +998,8 @@ def rehydrate_memory(
             }
 
         rehydrated_ids = []
+        rehydrated_memory_ids = []
+        rehydrated_summary_ids = []
         already_hot_ids = []
         tombstones_written = 0
 
@@ -929,10 +1016,12 @@ def rehydrate_memory(
                 record.access_count = (record.access_count or 0) + 1
                 record.last_accessed_at = datetime.utcnow()
                 _apply_rehydrate_bump(record)
-            rehydrated_ids.append(_serialize_memory_id(mem_type, record.id))
+            rehydrated_id = _serialize_memory_id(mem_type, record.id)
+            rehydrated_ids.append(rehydrated_id)
+            rehydrated_memory_ids.append(rehydrated_id)
             _write_tombstone(
                 db,
-                _serialize_memory_id(mem_type, record.id),
+                rehydrated_id,
                 TombstoneAction.rehydrated,
                 from_tier=MemoryTier.cold,
                 to_tier=MemoryTier.hot,
@@ -955,6 +1044,7 @@ def rehydrate_memory(
                 summary.last_accessed_at = datetime.utcnow()
                 _apply_rehydrate_bump(summary)
             rehydrated_ids.append(f"summary:{summary.id}")
+            rehydrated_summary_ids.append(summary.id)
             _write_tombstone(
                 db,
                 f"summary:{summary.id}",
@@ -965,6 +1055,29 @@ def rehydrate_memory(
                 actor=actor_name,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
+
+        _log_audit_event(
+            db,
+            event_type="memory.rehydrated",
+            target_type="memory",
+            target_ids=rehydrated_memory_ids,
+            count_affected=len(rehydrated_memory_ids),
+            reason=reason,
+            actor_label=actor_name,
+            context=context,
+            metadata={"bump_score": bump_score},
+        )
+        _log_audit_event(
+            db,
+            event_type="memory.rehydrated",
+            target_type="summary",
+            target_ids=rehydrated_summary_ids,
+            count_affected=len(rehydrated_summary_ids),
+            reason=reason,
+            actor_label=actor_name,
+            context=context,
+            metadata={"bump_score": bump_score},
+        )
 
         db.commit()
 
@@ -1160,6 +1273,8 @@ def purge_memory_to_archive(
     try:
         actor_name = actor or "mcp"
         archived_ids: list[str] = []
+        archived_memory_ids: list[str] = []
+        archived_summary_ids: list[int] = []
         skipped: list[dict] = []
         tombstones_written = 0
         candidates: list[dict] = []
@@ -1214,6 +1329,10 @@ def purge_memory_to_archive(
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
             archived_ids.append(f"{mem_type}:{mem_id}")
+            if mem_type == "summary":
+                archived_summary_ids.append(mem_id)
+            else:
+                archived_memory_ids.append(f"{mem_type}:{mem_id}")
 
         if dry_run:
             return {
@@ -1226,6 +1345,28 @@ def purge_memory_to_archive(
             }
 
         if archived_ids:
+            _log_audit_event(
+                db,
+                event_type="memory.purged_to_archive",
+                target_type="memory",
+                target_ids=archived_memory_ids,
+                count_affected=len(archived_memory_ids),
+                reason=reason,
+                actor_label=actor_name,
+                context=context,
+                metadata={"mode": "manual"},
+            )
+            _log_audit_event(
+                db,
+                event_type="memory.purged_to_archive",
+                target_type="summary",
+                target_ids=archived_summary_ids,
+                count_affected=len(archived_summary_ids),
+                reason=reason,
+                actor_label=actor_name,
+                context=context,
+                metadata={"mode": "manual"},
+            )
             db.commit()
         quota_stats = _enforce_archive_quota(db) if archived_ids else {"evicted": 0}
 
@@ -1351,6 +1492,18 @@ def restore_archived_memory(
                 db.rollback()
                 continue
 
+            target_ids = [mem_id] if mem_type == "summary" else [f"{mem_type}:{mem_id}"]
+            _log_audit_event(
+                db,
+                event_type="memory.restored_from_archive",
+                target_type="summary" if mem_type == "summary" else "memory",
+                target_ids=target_ids,
+                count_affected=1,
+                reason=reason,
+                actor_label=actor_name,
+                context=context,
+                metadata={"target_tier": target.value},
+            )
             db.commit()
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
             restored_ids.append(f"{mem_type}:{mem_id}")

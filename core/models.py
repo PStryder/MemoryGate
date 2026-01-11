@@ -362,6 +362,36 @@ class MemoryTombstone(Base):
 
 
 # =============================================================================
+# Audit Events
+# =============================================================================
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    event_id = Column(UUID_TYPE, primary_key=True, default=_uuid_default)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    event_type = Column(String(100), nullable=False)
+    event_version = Column(Integer, default=1, nullable=False)
+    actor_type = Column(String(50), nullable=False)
+    actor_id = Column(String(255))
+    org_id = Column(String(255))
+    user_id = Column(String(255))
+    target_type = Column(String(50), nullable=False)
+    target_ids = Column(JSON_TYPE, nullable=False)
+    count_affected = Column(Integer)
+    reason = Column(Text)
+    request_id = Column(String(255))
+    metadata_ = Column("metadata", JSON_TYPE)
+
+    __table_args__ = (
+        Index("ix_audit_events_created_at", "created_at"),
+        Index("ix_audit_events_event_type", "event_type"),
+        Index("ix_audit_events_org_id", "org_id"),
+        Index("ix_audit_events_user_id", "user_id"),
+    )
+
+
+# =============================================================================
 # Archived Memories
 # =============================================================================
 
@@ -417,3 +447,23 @@ MEMORY_MODELS = {
     "concept": Concept,
     "document": Document,
 }
+
+__all__ = [
+    "Base",
+    "MemoryTier",
+    "TombstoneAction",
+    "AIInstance",
+    "Session",
+    "Observation",
+    "Pattern",
+    "Concept",
+    "ConceptAlias",
+    "ConceptRelationship",
+    "Document",
+    "MemorySummary",
+    "MemoryTombstone",
+    "AuditEvent",
+    "ArchivedMemory",
+    "Embedding",
+    "MEMORY_MODELS",
+]
