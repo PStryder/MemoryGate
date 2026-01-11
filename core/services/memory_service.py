@@ -25,6 +25,9 @@ from core.services.memory_archive import (
     archive_memory,
     rehydrate_memory,
     list_archive_candidates,
+    list_archived_memories,
+    purge_memory_to_archive,
+    restore_archived_memory,
 )
 from core.services.memory_storage import (
     memory_store,

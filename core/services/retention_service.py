@@ -7,14 +7,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 import core.config as config
 from core.db import DB
 from core.models import (
     Concept,
     Document,
-    Embedding,
     MemorySummary,
     MemoryTombstone,
     MemoryTier,
@@ -204,17 +203,27 @@ def summarize_and_archive(db) -> dict:
 def purge_cold_records(db) -> dict:
     purged = 0
     marked = 0
+    skipped = 0
+    reason = "retention_purge"
+
+    from core.services.memory_archive import _archive_cold_record_to_store, _enforce_archive_quota
+
     for mem_type, model in MEMORY_MODELS.items():
         records = (
             db.query(model)
             .filter(model.tier == MemoryTier.cold)
-            .filter(model.score <= config.PURGE_TRIGGER_SCORE)
+            .filter(
+                or_(
+                    model.score <= config.PURGE_TRIGGER_SCORE,
+                    model.purge_eligible.is_(True),
+                )
+            )
             .order_by(model.score.asc())
             .limit(config.RETENTION_PURGE_LIMIT)
             .all()
         )
         for record in records:
-            if config.FORGET_MODE == "soft":
+            if config.FORGET_MODE == "soft" and not record.purge_eligible:
                 record.purge_eligible = True
                 write_tombstone(
                     db,
@@ -231,36 +240,38 @@ def purge_cold_records(db) -> dict:
 
             summary = find_summary_for_source(db, mem_type, record.id)
             if summary is None and not config.ALLOW_HARD_PURGE_WITHOUT_SUMMARY:
+                skipped += 1
                 continue
 
-            db.query(Embedding).filter(
-                Embedding.source_type == mem_type,
-                Embedding.source_id == record.id,
-            ).delete()
-            db.delete(record)
+            _archive_cold_record_to_store(db, mem_type, record, reason, "system")
             write_tombstone(
                 db,
                 serialize_memory_id(mem_type, record.id),
                 TombstoneAction.purged,
                 from_tier=MemoryTier.cold,
                 to_tier=None,
-                reason="hard_purge",
+                reason=reason,
                 actor="system",
-                metadata={"mode": "hard"},
+                metadata={"mode": "archive"},
             )
             purged += 1
 
-    # Purge summaries
+    # Purge summaries into archive store
     summaries = (
         db.query(MemorySummary)
         .filter(MemorySummary.tier == MemoryTier.cold)
-        .filter(MemorySummary.score <= config.PURGE_TRIGGER_SCORE)
+        .filter(
+            or_(
+                MemorySummary.score <= config.PURGE_TRIGGER_SCORE,
+                MemorySummary.purge_eligible.is_(True),
+            )
+        )
         .order_by(MemorySummary.score.asc())
         .limit(config.RETENTION_PURGE_LIMIT)
         .all()
     )
     for summary in summaries:
-        if config.FORGET_MODE == "soft":
+        if config.FORGET_MODE == "soft" and not summary.purge_eligible:
             summary.purge_eligible = True
             write_tombstone(
                 db,
@@ -275,21 +286,27 @@ def purge_cold_records(db) -> dict:
             marked += 1
             continue
 
-        db.delete(summary)
+        _archive_cold_record_to_store(db, "summary", summary, reason, "system")
         write_tombstone(
             db,
             f"summary:{summary.id}",
             TombstoneAction.purged,
             from_tier=MemoryTier.cold,
             to_tier=None,
-            reason="hard_purge",
+            reason=reason,
             actor="system",
-            metadata={"mode": "hard"},
+            metadata={"mode": "archive"},
         )
         purged += 1
 
     db.commit()
-    return {"purged": purged, "marked": marked}
+    quota_stats = _enforce_archive_quota(db) if purged else {"evicted": 0}
+    return {
+        "purged": purged,
+        "marked": marked,
+        "skipped": skipped,
+        "archive_evicted": quota_stats.get("evicted", 0),
+    }
 
 
 def run_retention_tick() -> None:
