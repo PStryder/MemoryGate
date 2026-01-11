@@ -362,6 +362,33 @@ class MemoryTombstone(Base):
 
 
 # =============================================================================
+# Archived Memories
+# =============================================================================
+
+class ArchivedMemory(Base):
+    __tablename__ = "archived_memories"
+
+    id = Column(Integer, primary_key=True)
+    source_type = Column(String(50), nullable=False)  # observation/pattern/concept/document/summary
+    source_id = Column(Integer, nullable=True)
+    payload = Column(JSON_TYPE, nullable=False)
+    archived_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    purge_reason = Column(Text)
+    purge_actor = Column(String(100))
+    expires_at = Column(DateTime(timezone=True))
+    size_bytes_estimate = Column(BigInteger, default=0, nullable=False)
+    original_embedding = Column(JSON_TYPE)
+    metadata_ = Column("metadata", JSON_TYPE, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_id", name="uq_archived_memories_source"),
+        Index("ix_archived_memories_source_type", "source_type"),
+        Index("ix_archived_memories_archived_at", "archived_at"),
+        Index("ix_archived_memories_expires_at", "expires_at"),
+    )
+
+
+# =============================================================================
 # Embeddings (Unified)
 # =============================================================================
 
