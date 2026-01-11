@@ -38,11 +38,29 @@ def _get_float(env_name: str, default: float) -> float:
         return default
 
 
+def _derive_effective_backends(db_backend: str, vector_backend: str) -> tuple[str, str]:
+    db_effective = db_backend if db_backend in {"postgres", "sqlite"} else "postgres"
+    vector_effective = (
+        vector_backend if vector_backend in {"pgvector", "sqlite_vss", "none"} else "none"
+    )
+    if db_effective == "sqlite" and vector_effective == "pgvector":
+        vector_effective = "none"
+    if db_effective == "postgres" and vector_effective == "sqlite_vss":
+        vector_effective = "none"
+    if vector_backend == "sqlite_vss":
+        vector_effective = "none"
+    return db_effective, vector_effective
+
+
 # Database settings
 DB_BACKEND = os.environ.get("DB_BACKEND", "postgres").strip().lower()
 VECTOR_BACKEND = os.environ.get("VECTOR_BACKEND", "pgvector").strip().lower()
 SQLITE_PATH = os.environ.get("SQLITE_PATH", "/data/memorygate.db")
 DATABASE_URL = os.environ.get("DATABASE_URL")
+DB_BACKEND_EFFECTIVE, VECTOR_BACKEND_EFFECTIVE = _derive_effective_backends(
+    DB_BACKEND,
+    VECTOR_BACKEND,
+)
 
 # Embedding settings
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -114,12 +132,10 @@ SUMMARY_BATCH_LIMIT = _get_int("SUMMARY_BATCH_LIMIT", 100)
 RETENTION_PURGE_LIMIT = _get_int("RETENTION_PURGE_LIMIT", 100)
 ALLOW_HARD_PURGE_WITHOUT_SUMMARY = _get_bool("ALLOW_HARD_PURGE_WITHOUT_SUMMARY", False)
 
-VECTOR_BACKEND_EFFECTIVE = VECTOR_BACKEND
-
 
 def validate_and_prepare_config() -> None:
     """Validate configuration and apply derived settings at startup."""
-    global DATABASE_URL, VECTOR_BACKEND_EFFECTIVE
+    global DATABASE_URL, DB_BACKEND_EFFECTIVE, VECTOR_BACKEND_EFFECTIVE
 
     errors = []
     if TENANCY_MODE != "single":
@@ -152,19 +168,14 @@ def validate_and_prepare_config() -> None:
         if DB_BACKEND == "postgres" and is_sqlite_url:
             errors.append("DATABASE_URL must be a postgres URL when DB_BACKEND=postgres")
 
-    vector_backend_effective = (
-        VECTOR_BACKEND if VECTOR_BACKEND in {"pgvector", "sqlite_vss", "none"} else "none"
-    )
     if VECTOR_BACKEND == "sqlite_vss":
-        vector_backend_effective = "none"
         logger.warning(
             "VECTOR_BACKEND=sqlite_vss is not configured; falling back to keyword search."
         )
-    if DB_BACKEND == "sqlite" and vector_backend_effective == "pgvector":
-        vector_backend_effective = "none"
-    if DB_BACKEND == "postgres" and vector_backend_effective == "sqlite_vss":
-        vector_backend_effective = "none"
-    VECTOR_BACKEND_EFFECTIVE = vector_backend_effective
+    DB_BACKEND_EFFECTIVE, VECTOR_BACKEND_EFFECTIVE = _derive_effective_backends(
+        DB_BACKEND,
+        VECTOR_BACKEND,
+    )
 
     if VECTOR_BACKEND_EFFECTIVE == "pgvector" and EMBEDDING_PROVIDER == "none":
         errors.append("VECTOR_BACKEND=pgvector requires EMBEDDING_PROVIDER to be set")

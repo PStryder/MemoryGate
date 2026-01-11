@@ -5,7 +5,6 @@ PostgreSQL + pgvector schema
 
 from datetime import datetime
 from enum import Enum as PyEnum
-import os
 import uuid
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, Float, Boolean,
@@ -14,17 +13,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship, declarative_base
 
-DB_BACKEND = os.environ.get("DB_BACKEND", "postgres").strip().lower()
-VECTOR_BACKEND = os.environ.get("VECTOR_BACKEND", "pgvector").strip().lower()
+import core.config as config
 
-DB_BACKEND_EFFECTIVE = DB_BACKEND if DB_BACKEND in {"postgres", "sqlite"} else "postgres"
-VECTOR_BACKEND_EFFECTIVE = (
-    VECTOR_BACKEND if VECTOR_BACKEND in {"pgvector", "sqlite_vss", "none"} else "none"
-)
-if DB_BACKEND_EFFECTIVE == "sqlite" and VECTOR_BACKEND_EFFECTIVE == "pgvector":
-    VECTOR_BACKEND_EFFECTIVE = "none"
-if DB_BACKEND_EFFECTIVE == "postgres" and VECTOR_BACKEND_EFFECTIVE == "sqlite_vss":
-    VECTOR_BACKEND_EFFECTIVE = "none"
+DB_BACKEND_EFFECTIVE = config.DB_BACKEND_EFFECTIVE
+VECTOR_BACKEND_EFFECTIVE = config.VECTOR_BACKEND_EFFECTIVE
 
 try:
     from pgvector.sqlalchemy import Vector as PgVector
