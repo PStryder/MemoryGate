@@ -12,6 +12,13 @@ from sqlalchemy import and_, func, or_
 
 from core.context import RequestContext
 from core.audit import ALLOWED_ACTOR_TYPES, log_event
+from core.audit_constants import (
+    EVENT_MEMORY_ARCHIVED,
+    EVENT_MEMORY_PURGED_TO_ARCHIVE,
+    EVENT_MEMORY_REHYDRATED,
+    EVENT_MEMORY_RESTORED_FROM_ARCHIVE,
+    EVENT_RETENTION_ARCHIVE_EVICTED,
+)
 from core.db import DB
 from core.errors import ValidationIssue
 from core.models import (
@@ -659,12 +666,41 @@ def _enforce_archive_quota(db) -> dict:
 
     running = 0
     evicted = 0
+    evicted_ids: list[int] = []
+    oldest_archived_at: Optional[datetime] = None
+    newest_archived_at: Optional[datetime] = None
     for row in db.query(ArchivedMemory).order_by(ArchivedMemory.archived_at.asc()).all():
         running += row.size_bytes_estimate or 0
+        if len(evicted_ids) < 50:
+            evicted_ids.append(row.id)
+        if row.archived_at:
+            if oldest_archived_at is None or row.archived_at < oldest_archived_at:
+                oldest_archived_at = row.archived_at
+            if newest_archived_at is None or row.archived_at > newest_archived_at:
+                newest_archived_at = row.archived_at
         db.delete(row)
         evicted += 1
         if total - running <= quota:
             break
+
+    if evicted_ids:
+        log_event(
+            db,
+            event_type=EVENT_RETENTION_ARCHIVE_EVICTED,
+            actor_type="system",
+            target_type="memory",
+            target_ids=evicted_ids,
+            count_affected=evicted,
+            reason="archive_quota_evicted",
+            metadata={
+                "bytes_before": int(total),
+                "bytes_after": int(max(total - running, 0)),
+                "quota_bytes": quota,
+                "oldest_archived_at": oldest_archived_at.isoformat() if oldest_archived_at else None,
+                "newest_archived_at": newest_archived_at.isoformat() if newest_archived_at else None,
+                "sample_size": len(evicted_ids),
+            },
+        )
 
     db.commit()
     logger.warning(
@@ -859,7 +895,7 @@ def archive_memory(
 
         _log_audit_event(
             db,
-            event_type="memory.archived",
+            event_type=EVENT_MEMORY_ARCHIVED,
             target_type="memory",
             target_ids=archived_memory_ids,
             count_affected=len(archived_memory_ids),
@@ -870,7 +906,7 @@ def archive_memory(
         )
         _log_audit_event(
             db,
-            event_type="memory.archived",
+            event_type=EVENT_MEMORY_ARCHIVED,
             target_type="summary",
             target_ids=archived_summary_ids,
             count_affected=len(archived_summary_ids),
@@ -1058,7 +1094,7 @@ def rehydrate_memory(
 
         _log_audit_event(
             db,
-            event_type="memory.rehydrated",
+            event_type=EVENT_MEMORY_REHYDRATED,
             target_type="memory",
             target_ids=rehydrated_memory_ids,
             count_affected=len(rehydrated_memory_ids),
@@ -1069,7 +1105,7 @@ def rehydrate_memory(
         )
         _log_audit_event(
             db,
-            event_type="memory.rehydrated",
+            event_type=EVENT_MEMORY_REHYDRATED,
             target_type="summary",
             target_ids=rehydrated_summary_ids,
             count_affected=len(rehydrated_summary_ids),
@@ -1347,7 +1383,7 @@ def purge_memory_to_archive(
         if archived_ids:
             _log_audit_event(
                 db,
-                event_type="memory.purged_to_archive",
+                event_type=EVENT_MEMORY_PURGED_TO_ARCHIVE,
                 target_type="memory",
                 target_ids=archived_memory_ids,
                 count_affected=len(archived_memory_ids),
@@ -1358,7 +1394,7 @@ def purge_memory_to_archive(
             )
             _log_audit_event(
                 db,
-                event_type="memory.purged_to_archive",
+                event_type=EVENT_MEMORY_PURGED_TO_ARCHIVE,
                 target_type="summary",
                 target_ids=archived_summary_ids,
                 count_affected=len(archived_summary_ids),
@@ -1495,7 +1531,7 @@ def restore_archived_memory(
             target_ids = [mem_id] if mem_type == "summary" else [f"{mem_type}:{mem_id}"]
             _log_audit_event(
                 db,
-                event_type="memory.restored_from_archive",
+                event_type=EVENT_MEMORY_RESTORED_FROM_ARCHIVE,
                 target_type="summary" if mem_type == "summary" else "memory",
                 target_ids=target_ids,
                 count_affected=1,

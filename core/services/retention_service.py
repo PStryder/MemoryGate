@@ -11,6 +11,10 @@ from sqlalchemy import case, func, or_
 
 import core.config as config
 from core.audit import log_event
+from core.audit_constants import (
+    EVENT_MEMORY_ARCHIVED,
+    EVENT_MEMORY_PURGED_TO_ARCHIVE,
+)
 from core.db import DB
 from core.models import (
     Concept,
@@ -202,7 +206,7 @@ def summarize_and_archive(db) -> dict:
     if archived_ids:
         log_event(
             db,
-            event_type="memory.archived",
+            event_type=EVENT_MEMORY_ARCHIVED,
             actor_type="system",
             target_type="memory",
             target_ids=archived_ids,
@@ -321,7 +325,7 @@ def purge_cold_records(db) -> dict:
     if purged_ids:
         log_event(
             db,
-            event_type="memory.purged_to_archive",
+            event_type=EVENT_MEMORY_PURGED_TO_ARCHIVE,
             actor_type="system",
             target_type="memory",
             target_ids=purged_ids,
@@ -332,7 +336,7 @@ def purge_cold_records(db) -> dict:
     if purged_summary_ids:
         log_event(
             db,
-            event_type="memory.purged_to_archive",
+            event_type=EVENT_MEMORY_PURGED_TO_ARCHIVE,
             actor_type="system",
             target_type="summary",
             target_ids=purged_summary_ids,
