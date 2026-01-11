@@ -55,6 +55,7 @@ def _search_memory_impl(
     include_evidence: bool = True,
     bump_score: bool = True,
 ) -> dict:
+    """Search using vector similarity when available, otherwise fallback to keyword search."""
     if not _vector_search_enabled():
         return _search_memory_keyword_impl(
             query=query,
@@ -254,6 +255,7 @@ def _search_memory_keyword_impl(
     include_evidence: bool,
     bump_score: bool,
 ) -> dict:
+    """Keyword-based search fallback used when vector search is disabled."""
     db = DB.SessionLocal()
     try:
         pattern = f"%{query}%"

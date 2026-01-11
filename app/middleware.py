@@ -23,6 +23,7 @@ from security_middleware import (
 
 
 def configure_middleware(app):
+    """Configure security, rate limiting, and CORS middleware for the FastAPI app."""
     rate_limit_config = load_rate_limit_config_from_env()
     rate_limiter = build_rate_limiter_from_env(rate_limit_config)
 

@@ -81,6 +81,7 @@ def load_request_size_limit_config_from_env() -> RequestSizeLimitConfig:
 
 
 class SecurityHeadersMiddleware:
+    """ASGI middleware that injects security headers into HTTP responses."""
     def __init__(self, app, config: SecurityHeadersConfig):
         self.app = app
         self.config = config
@@ -130,6 +131,7 @@ class _RequestTooLarge(Exception):
 
 
 class RequestSizeLimitMiddleware:
+    """ASGI middleware that rejects requests exceeding a configured size limit."""
     def __init__(self, app, config: RequestSizeLimitConfig):
         self.app = app
         self.config = config

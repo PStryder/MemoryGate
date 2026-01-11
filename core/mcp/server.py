@@ -27,6 +27,7 @@ _TOOL_INVENTORY_EMPTY_LOGGED = False
 
 
 def mcp_tool(*args, **kwargs):
+    """Register a tool with FastMCP and keep a local registry for rebinding."""
     def decorator(fn: Callable[..., dict]):
         _REGISTERED_TOOLS.append((fn, args, kwargs))
         mcp.tool(*args, **kwargs)(fn)
@@ -64,6 +65,7 @@ def _rebind_tool_registry(reason: str) -> None:
 
 
 async def tool_inventory_status(refresh_if_empty: bool = False, reason: str = "") -> dict:
+    """Return tool inventory details and optionally rebind when empty."""
     tools = await mcp.get_tools()
     tool_names = sorted(tools.keys())
     tool_count = len(tool_names)

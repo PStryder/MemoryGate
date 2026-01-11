@@ -96,6 +96,7 @@ def load_rate_limit_config_from_env() -> RateLimitConfig:
 
 
 class RateLimiter:
+    """Abstract rate limiter interface."""
     async def allow(self, key: str, rule: RateLimitRule) -> RateLimitResult:
         raise NotImplementedError
 
@@ -104,6 +105,7 @@ class RateLimiter:
 
 
 class InMemoryRateLimiter(RateLimiter):
+    """In-process rate limiter backed by an in-memory counter map."""
     def __init__(self, max_entries: int = 10000):
         self._lock = asyncio.Lock()
         self._counters: Dict[str, Tuple[int, float]] = {}
@@ -146,6 +148,7 @@ class InMemoryRateLimiter(RateLimiter):
 
 
 class RedisRateLimiter(RateLimiter):
+    """Redis-backed rate limiter with optional in-memory fallback."""
     def __init__(self, redis_client, key_prefix: str = "rl", fallback: RateLimiter | None = None):
         self._redis = redis_client
         self._key_prefix = key_prefix
@@ -214,6 +217,7 @@ def build_rate_limiter_from_env(config: RateLimitConfig) -> RateLimiter:
 
 
 class RateLimitMiddleware:
+    """ASGI middleware that enforces rate limit rules per request."""
     AUTH_PATH_PREFIXES = ("/auth", "/oauth", "/.well-known", "/mcp/.well-known")
 
     def __init__(self, app, limiter: RateLimiter, config: RateLimitConfig):

@@ -69,6 +69,7 @@ def _resolve_audit_actor(
     context: Optional[RequestContext],
     actor_label: Optional[str],
 ) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Normalize actor metadata for audit logging."""
     actor_value = (actor_label or "").strip()
     normalized = actor_value.lower() if actor_value else ""
     if normalized in ALLOWED_ACTOR_TYPES:
@@ -102,6 +103,7 @@ def _log_audit_event(
     context: Optional[RequestContext],
     metadata: Optional[dict] = None,
 ) -> None:
+    """Write an audit event with request context and normalized actor data."""
     if not target_ids:
         return
     actor_type, actor_id, org_id, user_id, request_id = _resolve_audit_actor(context, actor_label)
@@ -160,6 +162,7 @@ def _estimate_json_size(value) -> int:
 
 
 def _estimate_archive_size(mem_type: str, payload: dict) -> int:
+    """Estimate archive payload size to enforce storage quotas."""
     text_size = 0
     json_size = 0
     if mem_type == "observation":
@@ -376,6 +379,7 @@ def _archive_cold_record_to_store(
     reason: str,
     actor: str,
 ) -> ArchivedMemory:
+    """Move a cold-tier record into the archive store and delete the source rows."""
     payload = _build_archive_payload(db, mem_type, record)
     size_estimate = _estimate_archive_size(mem_type, payload)
     tier_value = record.tier.value if isinstance(record.tier, MemoryTier) else record.tier
@@ -422,6 +426,7 @@ def _restore_archived_record(
     actor: str,
     bump_score: bool,
 ) -> tuple[bool, list[str]]:
+    """Rehydrate a single archive record into the specified memory tier."""
     errors: list[str] = []
     mem_type = archive_row.source_type
     payload = archive_row.payload or {}

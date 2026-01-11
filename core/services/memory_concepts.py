@@ -110,6 +110,7 @@ def memory_store_concept(
         db.close()
 
 def _resolve_concept_by_name(db, name: str, include_cold: bool) -> Optional[Concept]:
+    """Resolve a concept by name or alias, with optional cold-tier lookup."""
     name_key = name.lower()
     concept_query = db.query(Concept).filter(Concept.name_key == name_key)
     if not include_cold:
