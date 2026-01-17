@@ -12,13 +12,12 @@ from fastmcp import FastMCP
 import core.config as config
 from core.context import AuthContext, RequestContext
 from core.services import memory_service
+from core.mcp.auth_middleware import get_current_context, MCPAuthMiddleware
 
 READ_ONLY_TOOL_ANNOTATIONS = {"readOnlyHint": True}
 DESTRUCTIVE_TOOL_ANNOTATIONS = {"destructiveHint": True}
 
 mcp = FastMCP("MemoryGate")
-
-DEFAULT_CONTEXT = RequestContext(auth=AuthContext(actor="mcp"))
 
 _REGISTERED_TOOLS: list[tuple[Callable[..., dict], tuple[Any, ...], dict[str, Any]]] = []
 _TOOL_REGISTRY_LOCK = threading.Lock()
@@ -116,7 +115,7 @@ def memory_search(
         min_confidence=min_confidence,
         domain=domain,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -146,7 +145,7 @@ def search_cold_memory(
         tags=tags,
         include_evidence=include_evidence,
         bump_score=bump_score,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -172,7 +171,7 @@ def archive_memory(
         actor=actor,
         dry_run=dry_run,
         limit=limit,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -200,7 +199,7 @@ def rehydrate_memory(
         dry_run=dry_run,
         limit=limit,
         bump_score=bump_score,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -212,7 +211,7 @@ def list_archive_candidates(
     return memory_service.list_archive_candidates(
         below_score=below_score,
         limit=limit,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -236,7 +235,7 @@ def memory_store(
         ai_platform=ai_platform,
         conversation_id=conversation_id,
         conversation_title=conversation_title,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -254,13 +253,13 @@ def memory_recall(
         limit=limit,
         ai_name=ai_name,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
 @mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
 def memory_stats() -> dict:
-    return memory_service.memory_stats(context=DEFAULT_CONTEXT)
+    return memory_service.memory_stats(context=get_current_context())
 
 
 @mcp_tool()
@@ -277,7 +276,7 @@ def memory_init_session(
         ai_name=ai_name,
         ai_platform=ai_platform,
         source_url=source_url,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -299,7 +298,7 @@ def memory_store_document(
         key_concepts=key_concepts,
         publication_date=publication_date,
         metadata=metadata,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -323,7 +322,7 @@ def memory_store_concept(
         metadata=metadata,
         ai_name=ai_name,
         ai_platform=ai_platform,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -335,7 +334,7 @@ def memory_get_concept(
     return memory_service.memory_get_concept(
         name=name,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -347,7 +346,7 @@ def memory_add_concept_alias(
     return memory_service.memory_add_concept_alias(
         concept_name=concept_name,
         alias=alias,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -365,7 +364,7 @@ def memory_add_concept_relationship(
         rel_type=rel_type,
         weight=weight,
         description=description,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -381,7 +380,7 @@ def memory_related_concepts(
         rel_type=rel_type,
         min_weight=min_weight,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -405,7 +404,7 @@ def memory_update_pattern(
         ai_name=ai_name,
         ai_platform=ai_platform,
         conversation_id=conversation_id,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -419,7 +418,7 @@ def memory_get_pattern(
         category=category,
         pattern_name=pattern_name,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -435,7 +434,7 @@ def memory_patterns(
         min_confidence=min_confidence,
         limit=limit,
         include_cold=include_cold,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -447,7 +446,7 @@ def memory_user_guide(
     return memory_service.memory_user_guide(
         format=format,
         verbosity=verbosity,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
@@ -459,22 +458,23 @@ def memory_bootstrap(
     return memory_service.memory_bootstrap(
         ai_name=ai_name,
         ai_platform=ai_platform,
-        context=DEFAULT_CONTEXT,
+        context=get_current_context(),
     )
 
 
-mcp_sse_app = mcp.http_app(
+mcp_sse_app = MCPAuthMiddleware(mcp.http_app(
     path="/",
     transport="sse",
     stateless_http=True,
     json_response=True,
-)
-mcp_stream_app = mcp.http_app(
+))
+
+mcp_stream_app = MCPAuthMiddleware(mcp.http_app(
     path="/",
     transport="streamable-http",
     stateless_http=True,
     json_response=True,
-)
+))
 
 
 class MCPRouteNormalizerASGI:
