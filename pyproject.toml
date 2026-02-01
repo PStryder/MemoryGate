@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memorygate"
+version = "0.1.0"
+description = "MemoryGate service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "fastmcp<3",
+    "pyjwt",
+    "cryptography",
+    "python-dotenv",
+    "psycopg2-binary",
+    "sqlalchemy",
+    "alembic",
+    "httpx",
+    "bcrypt",
+    "redis",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+postgres = [
+    "psycopg",
+    "pgvector",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "core*"]
