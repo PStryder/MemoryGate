@@ -43,15 +43,39 @@ spec:
             - secretRef:
                 name: {{ include "memorygate.fullname" . }}
           readinessProbe:
-            httpGet:
-              path: /health
-              port: {{ .Values.service.targetPort }}
+            exec:
+              command:
+              - python
+              - -c
+              - |
+                import json, os, urllib.request
+                url = f"http://localhost:{{ .Values.service.targetPort }}/mcp"
+                token = os.environ.get("MEMORYGATE_API_KEY")
+                payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "memorygate.health", "arguments": {}}}
+                req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+                if token:
+                    req.add_header("Authorization", "Bearer " + token)
+                resp = urllib.request.urlopen(req, timeout=5)
+                data = json.load(resp)
+                assert "result" in data
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
-              port: {{ .Values.service.targetPort }}
+            exec:
+              command:
+              - python
+              - -c
+              - |
+                import json, os, urllib.request
+                url = f"http://localhost:{{ .Values.service.targetPort }}/mcp"
+                token = os.environ.get("MEMORYGATE_API_KEY")
+                payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "memorygate.health", "arguments": {}}}
+                req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+                if token:
+                    req.add_header("Authorization", "Bearer " + token)
+                resp = urllib.request.urlopen(req, timeout=5)
+                data = json.load(resp)
+                assert "result" in data
             initialDelaySeconds: 10
             periodSeconds: 20
           securityContext:

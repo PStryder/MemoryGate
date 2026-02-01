@@ -11,7 +11,7 @@ from typing import Optional, List
 from sqlalchemy import and_, func, or_
 
 import core.config as config
-from core.context import RequestContext
+from core.context import RequestContext, resolve_tenant_id, require_tenant_id_value
 from core.audit import ALLOWED_ACTOR_TYPES, log_event
 from core.audit_constants import (
     EVENT_MEMORY_ARCHIVED,
@@ -263,12 +263,21 @@ def _build_archive_payload(db, mem_type: str, record) -> dict:
             }
             for alias in (record.aliases or [])
         ]
-        outgoing = db.query(ConceptRelationship).filter(
+        outgoing_query = db.query(ConceptRelationship).filter(
             ConceptRelationship.from_concept_id == record.id
-        ).all()
-        incoming = db.query(ConceptRelationship).filter(
+        )
+        incoming_query = db.query(ConceptRelationship).filter(
             ConceptRelationship.to_concept_id == record.id
-        ).all()
+        )
+        if record.tenant_id:
+            outgoing_query = outgoing_query.filter(
+                ConceptRelationship.tenant_id == record.tenant_id
+            )
+            incoming_query = incoming_query.filter(
+                ConceptRelationship.tenant_id == record.tenant_id
+            )
+        outgoing = outgoing_query.all()
+        incoming = incoming_query.all()
         relationships = {
             "outgoing": [
                 {
@@ -398,21 +407,35 @@ def _archive_cold_record_to_store(
     db.add(archive_row)
 
     if mem_type in MEMORY_MODELS:
-        db.query(Embedding).filter(
+        embed_query = db.query(Embedding).filter(
             Embedding.source_type == mem_type,
             Embedding.source_id == record.id,
-        ).delete(synchronize_session=False)
+        )
+        if record.tenant_id:
+            embed_query = embed_query.filter(Embedding.tenant_id == record.tenant_id)
+        embed_query.delete(synchronize_session=False)
 
     if mem_type == "concept":
-        db.query(ConceptRelationship).filter(
+        outgoing_query = db.query(ConceptRelationship).filter(
             ConceptRelationship.from_concept_id == record.id
-        ).delete(synchronize_session=False)
-        db.query(ConceptRelationship).filter(
+        )
+        incoming_query = db.query(ConceptRelationship).filter(
             ConceptRelationship.to_concept_id == record.id
-        ).delete(synchronize_session=False)
-        db.query(ConceptAlias).filter(
+        )
+        alias_query = db.query(ConceptAlias).filter(
             ConceptAlias.concept_id == record.id
-        ).delete(synchronize_session=False)
+        )
+        if record.tenant_id:
+            outgoing_query = outgoing_query.filter(
+                ConceptRelationship.tenant_id == record.tenant_id
+            )
+            incoming_query = incoming_query.filter(
+                ConceptRelationship.tenant_id == record.tenant_id
+            )
+            alias_query = alias_query.filter(ConceptAlias.tenant_id == record.tenant_id)
+        outgoing_query.delete(synchronize_session=False)
+        incoming_query.delete(synchronize_session=False)
+        alias_query.delete(synchronize_session=False)
 
     db.delete(record)
     return archive_row
@@ -425,21 +448,27 @@ def _restore_archived_record(
     reason: str,
     actor: str,
     bump_score: bool,
+    tenant_id: Optional[str] = None,
 ) -> tuple[bool, list[str]]:
     """Rehydrate a single archive record into the specified memory tier."""
     errors: list[str] = []
     mem_type = archive_row.source_type
     payload = archive_row.payload or {}
     source_id = payload.get("id") or archive_row.source_id
+    payload_tenant_id = payload.get("tenant_id") or archive_row.tenant_id or tenant_id
+    tenant_id = require_tenant_id_value(payload_tenant_id)
 
     if mem_type == "summary":
-        existing = db.query(MemorySummary).filter(MemorySummary.id == source_id).first()
+        summary_query = db.query(MemorySummary).filter(MemorySummary.id == source_id)
+        if tenant_id:
+            summary_query = summary_query.filter(MemorySummary.tenant_id == tenant_id)
+        existing = summary_query.first()
         if existing:
             return False, [f"summary:{source_id} already exists"]
 
         summary = MemorySummary(
             id=source_id,
-            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
+            tenant_id=tenant_id,
             source_type=payload.get("source_type"),
             source_id=payload.get("source_id"),
             source_ids=payload.get("source_ids") or [],
@@ -474,6 +503,7 @@ def _restore_archived_record(
             to_tier=target_tier,
             reason=reason,
             actor=actor,
+            tenant_id=tenant_id,
         )
         db.delete(archive_row)
         return True, errors
@@ -482,14 +512,17 @@ def _restore_archived_record(
     if not model:
         return False, [f"unsupported type: {mem_type}"]
 
-    existing = db.query(model).filter(model.id == source_id).first()
+    record_query = db.query(model).filter(model.id == source_id)
+    if tenant_id:
+        record_query = record_query.filter(model.tenant_id == tenant_id)
+    existing = record_query.first()
     if existing:
         return False, [f"{mem_type}:{source_id} already exists"]
 
     if mem_type == "observation":
         record = Observation(
             id=source_id,
-            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
+            tenant_id=tenant_id,
             timestamp=_deserialize_datetime(payload.get("timestamp")),
             observation=payload.get("observation"),
             confidence=payload.get("confidence", 0.8),
@@ -510,7 +543,7 @@ def _restore_archived_record(
     elif mem_type == "pattern":
         record = Pattern(
             id=source_id,
-            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
+            tenant_id=tenant_id,
             category=payload.get("category") or "",
             pattern_name=payload.get("pattern_name") or "",
             pattern_text=payload.get("pattern_text") or "",
@@ -532,7 +565,7 @@ def _restore_archived_record(
     elif mem_type == "concept":
         record = Concept(
             id=source_id,
-            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
+            tenant_id=tenant_id,
             name=payload.get("name") or "",
             name_key=payload.get("name_key") or (payload.get("name") or "").lower(),
             type=payload.get("type") or "",
@@ -555,7 +588,7 @@ def _restore_archived_record(
     else:
         record = Document(
             id=source_id,
-            tenant_id=payload.get("tenant_id") or config.DEFAULT_TENANT_ID,
+            tenant_id=tenant_id,
             title=payload.get("title") or "",
             doc_type=payload.get("doc_type") or "",
             content_summary=payload.get("content_summary"),
@@ -592,9 +625,14 @@ def _restore_archived_record(
             alias_key = alias.get("alias_key") or (alias.get("alias") or "").lower()
             if not alias_key:
                 continue
-            existing_alias = db.query(ConceptAlias).filter(
+            existing_alias_query = db.query(ConceptAlias).filter(
                 ConceptAlias.alias_key == alias_key
-            ).first()
+            )
+            if tenant_id:
+                existing_alias_query = existing_alias_query.filter(
+                    ConceptAlias.tenant_id == tenant_id
+                )
+            existing_alias = existing_alias_query.first()
             if existing_alias:
                 errors.append(f"alias '{alias.get('alias')}' already exists")
                 continue
@@ -612,14 +650,22 @@ def _restore_archived_record(
             rel_type = rel.get("rel_type")
             if not to_id or not rel_type:
                 continue
-            if not db.query(Concept).filter(Concept.id == to_id).first():
+            concept_query = db.query(Concept).filter(Concept.id == to_id)
+            if tenant_id:
+                concept_query = concept_query.filter(Concept.tenant_id == tenant_id)
+            if not concept_query.first():
                 errors.append(f"missing concept {to_id} for outgoing {rel_type}")
                 continue
-            existing_rel = db.query(ConceptRelationship).filter(
+            existing_rel_query = db.query(ConceptRelationship).filter(
                 ConceptRelationship.from_concept_id == record.id,
                 ConceptRelationship.to_concept_id == to_id,
                 ConceptRelationship.rel_type == rel_type,
-            ).first()
+            )
+            if tenant_id:
+                existing_rel_query = existing_rel_query.filter(
+                    ConceptRelationship.tenant_id == tenant_id
+                )
+            existing_rel = existing_rel_query.first()
             if existing_rel:
                 continue
             db.add(ConceptRelationship(
@@ -637,14 +683,22 @@ def _restore_archived_record(
             rel_type = rel.get("rel_type")
             if not from_id or not rel_type:
                 continue
-            if not db.query(Concept).filter(Concept.id == from_id).first():
+            concept_query = db.query(Concept).filter(Concept.id == from_id)
+            if tenant_id:
+                concept_query = concept_query.filter(Concept.tenant_id == tenant_id)
+            if not concept_query.first():
                 errors.append(f"missing concept {from_id} for incoming {rel_type}")
                 continue
-            existing_rel = db.query(ConceptRelationship).filter(
+            existing_rel_query = db.query(ConceptRelationship).filter(
                 ConceptRelationship.from_concept_id == from_id,
                 ConceptRelationship.to_concept_id == record.id,
                 ConceptRelationship.rel_type == rel_type,
-            ).first()
+            )
+            if tenant_id:
+                existing_rel_query = existing_rel_query.filter(
+                    ConceptRelationship.tenant_id == tenant_id
+                )
+            existing_rel = existing_rel_query.first()
             if existing_rel:
                 continue
             db.add(ConceptRelationship(
@@ -665,6 +719,7 @@ def _restore_archived_record(
         to_tier=target_tier,
         reason=reason,
         actor=actor,
+        tenant_id=tenant_id,
     )
 
     db.delete(archive_row)
@@ -675,12 +730,15 @@ def _archive_quota_bytes() -> int:
     return int(STORAGE_QUOTA_BYTES * ARCHIVE_MULTIPLIER)
 
 
-def _enforce_archive_quota(db) -> dict:
+def _enforce_archive_quota(db, *, tenant_id: Optional[str] = None) -> dict:
     quota = _archive_quota_bytes()
     if quota <= 0:
         return {"evicted": 0, "bytes_before": 0, "bytes_after": 0}
 
-    total = db.query(func.coalesce(func.sum(ArchivedMemory.size_bytes_estimate), 0)).scalar() or 0
+    total_query = db.query(func.coalesce(func.sum(ArchivedMemory.size_bytes_estimate), 0))
+    if tenant_id:
+        total_query = total_query.filter(ArchivedMemory.tenant_id == tenant_id)
+    total = total_query.scalar() or 0
     if total <= quota:
         return {"evicted": 0, "bytes_before": int(total), "bytes_after": int(total)}
 
@@ -689,7 +747,10 @@ def _enforce_archive_quota(db) -> dict:
     evicted_ids: list[int] = []
     oldest_archived_at: Optional[datetime] = None
     newest_archived_at: Optional[datetime] = None
-    for row in db.query(ArchivedMemory).order_by(ArchivedMemory.archived_at.asc()).all():
+    rows_query = db.query(ArchivedMemory)
+    if tenant_id:
+        rows_query = rows_query.filter(ArchivedMemory.tenant_id == tenant_id)
+    for row in rows_query.order_by(ArchivedMemory.archived_at.asc()).all():
         running += row.size_bytes_estimate or 0
         if len(evicted_ids) < 50:
             evicted_ids.append(row.id)
@@ -708,6 +769,7 @@ def _enforce_archive_quota(db) -> dict:
             db,
             event_type=EVENT_RETENTION_ARCHIVE_EVICTED,
             actor_type="system",
+            org_id=tenant_id,
             target_type="memory",
             target_ids=evicted_ids,
             count_affected=evicted,
@@ -761,6 +823,8 @@ def archive_memory(
     if mode not in valid_modes:
         return {"status": "error", "message": f"Invalid mode. Must be one of: {', '.join(sorted(valid_modes))}"}
 
+    tenant_id = resolve_tenant_id(context)
+
     db = DB.SessionLocal()
     try:
         actor_name = actor or "mcp"
@@ -769,12 +833,13 @@ def archive_memory(
 
         if memory_ids:
             refs = [_parse_memory_ref(raw) for raw in memory_ids]
-            candidates.extend(_collect_records_by_refs(db, refs))
+            candidates.extend(_collect_records_by_refs(db, refs, tenant_id=tenant_id))
 
         if summary_ids:
-            summary_records.extend(
-                db.query(MemorySummary).filter(MemorySummary.id.in_(summary_ids)).all()
-            )
+            summary_query = db.query(MemorySummary).filter(MemorySummary.id.in_(summary_ids))
+            if tenant_id:
+                summary_query = summary_query.filter(MemorySummary.tenant_id == tenant_id)
+            summary_records.extend(summary_query.all())
 
         if threshold:
             below_score = threshold.get("below_score")
@@ -793,6 +858,7 @@ def archive_memory(
                         above_score=None,
                         types=list(MEMORY_MODELS.keys()),
                         limit=limit,
+                        tenant_id=tenant_id,
                     )
                 )
             if threshold_type in {"summary", "any"}:
@@ -803,6 +869,7 @@ def archive_memory(
                         below_score=below_score,
                         above_score=None,
                         limit=limit,
+                        tenant_id=tenant_id,
                     )
                 )
 
@@ -847,18 +914,21 @@ def archive_memory(
                 continue
 
             if mode == "archive_and_summarize_then_archive":
-                summary = _find_summary_for_source(db, mem_type, record.id)
+                summary = _find_summary_for_source(db, mem_type, record.id, tenant_id=tenant_id)
                 summary_text = _summary_text_for_record(mem_type, record)
                 if summary:
                     summary.summary_text = summary_text
                 else:
-                    summary = MemorySummary(
-                        source_type=mem_type,
-                        source_id=record.id,
-                        source_ids=[record.id],
-                        summary_text=summary_text,
-                        metadata_={"reason": reason},
-                    )
+                    summary_payload = {
+                        "source_type": mem_type,
+                        "source_id": record.id,
+                        "source_ids": [record.id],
+                        "summary_text": summary_text,
+                        "metadata_": {"reason": reason},
+                    }
+                    if tenant_id:
+                        summary_payload["tenant_id"] = tenant_id
+                    summary = MemorySummary(**summary_payload)
                     db.add(summary)
                     summaries_created += 1
                 _write_tombstone(
@@ -869,6 +939,7 @@ def archive_memory(
                     to_tier=record.tier,
                     reason=reason,
                     actor=actor_name,
+                    tenant_id=tenant_id,
                 )
                 tombstones_written += 1 if TOMBSTONES_ENABLED else 0
 
@@ -888,6 +959,7 @@ def archive_memory(
                 to_tier=MemoryTier.cold,
                 reason=reason,
                 actor=actor_name,
+                tenant_id=tenant_id,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
 
@@ -910,6 +982,7 @@ def archive_memory(
                 to_tier=MemoryTier.cold,
                 reason=reason,
                 actor=actor_name,
+                tenant_id=tenant_id,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
 
@@ -973,6 +1046,10 @@ def rehydrate_memory(
         return {"status": "error", "message": "reason is required"}
     _validate_limit(limit, "limit", REHYDRATE_LIMIT_MAX)
 
+    tenant_id = resolve_tenant_id(context)
+
+    tenant_id = resolve_tenant_id(context)
+
     db = DB.SessionLocal()
     try:
         actor_name = actor or "mcp"
@@ -981,19 +1058,21 @@ def rehydrate_memory(
 
         if memory_ids:
             refs = [_parse_memory_ref(raw) for raw in memory_ids]
-            candidates.extend(_collect_records_by_refs(db, refs))
+            candidates.extend(_collect_records_by_refs(db, refs, tenant_id=tenant_id))
 
         if summary_ids:
-            summary_records.extend(
-                db.query(MemorySummary).filter(MemorySummary.id.in_(summary_ids)).all()
-            )
+            summary_query = db.query(MemorySummary).filter(MemorySummary.id.in_(summary_ids))
+            if tenant_id:
+                summary_query = summary_query.filter(MemorySummary.tenant_id == tenant_id)
+            summary_records.extend(summary_query.all())
 
         if query:
-            cold_results = search_cold_memory(query=query, top_k=limit)
+            cold_results = search_cold_memory(query=query, top_k=limit, context=context)
             for row in cold_results.get("results", []):
                 candidates.extend(_collect_records_by_refs(
                     db,
                     [(_parse_memory_ref(_serialize_memory_id(row["source_type"], row["id"])))],
+                    tenant_id=tenant_id,
                 ))
 
         if threshold:
@@ -1012,6 +1091,7 @@ def rehydrate_memory(
                         above_score=above_score,
                         types=list(MEMORY_MODELS.keys()),
                         limit=limit,
+                        tenant_id=tenant_id,
                     )
                 )
             if threshold_type in {"summary", "any"}:
@@ -1022,6 +1102,7 @@ def rehydrate_memory(
                         below_score=below_score,
                         above_score=above_score,
                         limit=limit,
+                        tenant_id=tenant_id,
                     )
                 )
 
@@ -1083,6 +1164,7 @@ def rehydrate_memory(
                 to_tier=MemoryTier.hot,
                 reason=reason,
                 actor=actor_name,
+                tenant_id=tenant_id,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
 
@@ -1109,6 +1191,7 @@ def rehydrate_memory(
                 to_tier=MemoryTier.hot,
                 reason=reason,
                 actor=actor_name,
+                tenant_id=tenant_id,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
 
@@ -1158,6 +1241,7 @@ def list_archive_candidates(
     List archive candidates without mutation.
     """
     _validate_limit(limit, "limit", ARCHIVE_LIMIT_MAX)
+    tenant_id = resolve_tenant_id(context)
     db = DB.SessionLocal()
     try:
         candidates = _collect_threshold_records(
@@ -1167,6 +1251,7 @@ def list_archive_candidates(
             above_score=None,
             types=list(MEMORY_MODELS.keys()),
             limit=limit,
+            tenant_id=tenant_id,
         )
         return {
             "status": "ok",
@@ -1194,6 +1279,8 @@ def list_archived_memories(
     _validate_limit(limit, "limit", ARCHIVE_LIMIT_MAX)
     if offset < 0:
         return {"status": "error", "message": "offset must be >= 0"}
+
+    tenant_id = resolve_tenant_id(context)
 
     errors: list[dict] = []
     refs: list[tuple[str, int]] = []
@@ -1227,6 +1314,8 @@ def list_archived_memories(
     db = DB.SessionLocal()
     try:
         query = db.query(ArchivedMemory)
+        if tenant_id:
+            query = query.filter(ArchivedMemory.tenant_id == tenant_id)
         if unique_refs:
             filters = [
                 and_(
@@ -1286,6 +1375,8 @@ def purge_memory_to_archive(
         return {"status": "error", "message": "reason is required"}
     _validate_limit(limit, "limit", ARCHIVE_LIMIT_MAX)
 
+    tenant_id = resolve_tenant_id(context)
+
     errors: list[dict] = []
     refs: list[tuple[str, int]] = []
 
@@ -1337,13 +1428,19 @@ def purge_memory_to_archive(
 
         for mem_type, mem_id in unique_refs:
             if mem_type == "summary":
-                record = db.query(MemorySummary).filter(MemorySummary.id == mem_id).first()
+                record_query = db.query(MemorySummary).filter(MemorySummary.id == mem_id)
+                if tenant_id:
+                    record_query = record_query.filter(MemorySummary.tenant_id == tenant_id)
+                record = record_query.first()
             else:
                 model = MEMORY_MODELS.get(mem_type)
                 if not model:
                     errors.append({"id": f"{mem_type}:{mem_id}", "message": "unsupported type"})
                     continue
-                record = db.query(model).filter(model.id == mem_id).first()
+                record_query = db.query(model).filter(model.id == mem_id)
+                if tenant_id:
+                    record_query = record_query.filter(model.tenant_id == tenant_id)
+                record = record_query.first()
 
             if not record:
                 skipped.append({"id": f"{mem_type}:{mem_id}", "reason": "not_found"})
@@ -1353,10 +1450,13 @@ def purge_memory_to_archive(
                 skipped.append({"id": f"{mem_type}:{mem_id}", "reason": "not_cold"})
                 continue
 
-            existing_archive = db.query(ArchivedMemory).filter(
+            existing_query = db.query(ArchivedMemory).filter(
                 ArchivedMemory.source_type == mem_type,
                 ArchivedMemory.source_id == mem_id,
-            ).first()
+            )
+            if tenant_id:
+                existing_query = existing_query.filter(ArchivedMemory.tenant_id == tenant_id)
+            existing_archive = existing_query.first()
             if existing_archive:
                 skipped.append({"id": f"{mem_type}:{mem_id}", "reason": "already_archived"})
                 continue
@@ -1382,6 +1482,7 @@ def purge_memory_to_archive(
                 to_tier=None,
                 reason=reason,
                 actor=actor_name,
+                tenant_id=tenant_id,
             )
             tombstones_written += 1 if TOMBSTONES_ENABLED else 0
             archived_ids.append(f"{mem_type}:{mem_id}")
@@ -1424,7 +1525,7 @@ def purge_memory_to_archive(
                 metadata={"mode": "manual"},
             )
             db.commit()
-        quota_stats = _enforce_archive_quota(db) if archived_ids else {"evicted": 0}
+        quota_stats = _enforce_archive_quota(db, tenant_id=tenant_id) if archived_ids else {"evicted": 0}
 
         return {
             "status": "archived",
@@ -1513,10 +1614,13 @@ def restore_archived_memory(
         candidates: list[dict] = []
 
         for mem_type, mem_id in unique_refs:
-            archive_row = db.query(ArchivedMemory).filter(
+            archive_query = db.query(ArchivedMemory).filter(
                 ArchivedMemory.source_type == mem_type,
                 ArchivedMemory.source_id == mem_id,
-            ).first()
+            )
+            if tenant_id:
+                archive_query = archive_query.filter(ArchivedMemory.tenant_id == tenant_id)
+            archive_row = archive_query.first()
             if not archive_row:
                 skipped.append({"id": f"{mem_type}:{mem_id}", "reason": "not_archived"})
                 continue
@@ -1540,6 +1644,7 @@ def restore_archived_memory(
                 reason,
                 actor_name,
                 bump_score and target == MemoryTier.hot,
+                tenant_id=tenant_id,
             )
             if not restored:
                 skipped.append({"id": f"{mem_type}:{mem_id}", "reason": "restore_failed"})
@@ -1570,7 +1675,15 @@ def restore_archived_memory(
                 text_value = _embedding_text_for_payload(mem_type, payload)
                 if text_value:
                     record_id = payload.get("id") or mem_id
-                    _store_embedding(db, mem_type, record_id, text_value, replace=True)
+                    payload_tenant_id = payload.get("tenant_id") or archive_row.tenant_id or tenant_id
+                    _store_embedding(
+                        db,
+                        mem_type,
+                        record_id,
+                        text_value,
+                        replace=True,
+                        tenant_id=payload_tenant_id,
+                    )
 
         if dry_run:
             return {

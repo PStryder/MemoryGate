@@ -1,7 +1,7 @@
 """Add archived memories table.
 
 Revision ID: 0003_archived_memories
-Revises: 8eaa0966fb0f_add_oauth_tables
+Revises: 8eaa0966fb0f
 Create Date: 2026-01-11
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "0003_archived_memories"
-down_revision = "8eaa0966fb0f_add_oauth_tables"
+down_revision = "8eaa0966fb0f"
 branch_labels = None
 depends_on = None
 

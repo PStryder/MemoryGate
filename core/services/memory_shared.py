@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 import core.config as config
+from core.context import require_tenant_id_value
 from core.errors import EmbeddingProviderError, ValidationIssue
 from core.models import (
     Embedding,
@@ -255,6 +256,7 @@ def _store_embedding(
     source_id: int,
     text_value: str,
     replace: bool = False,
+    tenant_id: Optional[str] = None,
 ) -> bool:
     if not _vector_search_enabled():
         return False
@@ -263,10 +265,12 @@ def _store_embedding(
     except EmbeddingProviderError:
         logger.warning("Embedding unavailable; skipping embedding store")
         return False
+    effective_tenant_id = require_tenant_id_value(tenant_id)
     if replace:
         db.query(Embedding).filter(
             Embedding.source_type == source_type,
             Embedding.source_id == source_id,
+            Embedding.tenant_id == effective_tenant_id,
         ).delete()
     emb = Embedding(
         source_type=source_type,
@@ -274,6 +278,7 @@ def _store_embedding(
         model_version=EMBEDDING_MODEL,
         embedding=embedding_vector,
         normalized=True,
+        tenant_id=effective_tenant_id,
     )
     db.add(emb)
     try:
@@ -289,13 +294,18 @@ def _store_embedding(
 # =============================================================================
 
 def _tool_error_payload(tool_name: str, exc: ValidationIssue) -> dict:
-    return {
+    payload = {
         "status": "error",
         "error_type": "validation_error",
         "tool": tool_name,
         "field": exc.field,
         "message": str(exc),
     }
+    if getattr(exc, "error_code", None):
+        payload["error_code"] = exc.error_code
+    if getattr(exc, "data", None):
+        payload["data"] = exc.data
+    return payload
 
 
 def _log_validation_issue(tool_name: str, exc: ValidationIssue, warn: bool = False) -> None:
@@ -308,7 +318,7 @@ def _log_validation_issue(tool_name: str, exc: ValidationIssue, warn: bool = Fal
     if warn:
         logger.warning("tool_validation_error", extra=payload)
     else:
-        logger.info("tool_validation_error", extra=payload)
+        logger.debug("tool_validation_error", extra=payload)
 
 
 def _tool_error_handler(fn: Callable[..., dict]) -> Callable[..., dict]:
@@ -421,9 +431,11 @@ def _write_tombstone(
     reason: Optional[str],
     actor: Optional[str],
     metadata: Optional[dict] = None,
+    tenant_id: Optional[str] = None,
 ) -> None:
     if not TOMBSTONES_ENABLED:
         return
+    effective_tenant_id = require_tenant_id_value(tenant_id)
     tombstone = MemoryTombstone(
         memory_id=memory_id,
         action=action,
@@ -432,6 +444,7 @@ def _write_tombstone(
         reason=reason,
         actor=actor,
         metadata_=metadata or {},
+        tenant_id=effective_tenant_id,
     )
     db.add(tombstone)
 
@@ -451,11 +464,19 @@ def _summary_text_for_record(memory_type: str, record) -> str:
     return source[:SUMMARY_MAX_LENGTH]
 
 
-def _find_summary_for_source(db, memory_type: str, source_id: int) -> Optional[MemorySummary]:
-    return db.query(MemorySummary).filter(
+def _find_summary_for_source(
+    db,
+    memory_type: str,
+    source_id: int,
+    tenant_id: Optional[str] = None,
+) -> Optional[MemorySummary]:
+    query = db.query(MemorySummary).filter(
         MemorySummary.source_type == memory_type,
         MemorySummary.source_id == source_id
-    ).first()
+    )
+    if tenant_id:
+        query = query.filter(MemorySummary.tenant_id == tenant_id)
+    return query.first()
 
 
 def _parse_memory_ref(raw) -> tuple[str, int]:
@@ -488,7 +509,11 @@ def _parse_memory_ref(raw) -> tuple[str, int]:
     )
 
 
-def _collect_records_by_refs(db, refs: list[tuple[str, int]]) -> list[tuple[str, object]]:
+def _collect_records_by_refs(
+    db,
+    refs: list[tuple[str, int]],
+    tenant_id: Optional[str] = None,
+) -> list[tuple[str, object]]:
     records = []
     for mem_type, mem_id in refs:
         model = MEMORY_MODELS.get(mem_type)
@@ -498,7 +523,10 @@ def _collect_records_by_refs(db, refs: list[tuple[str, int]]) -> list[tuple[str,
                 field="memory_ids",
                 error_type="invalid_type",
             )
-        record = db.query(model).filter(model.id == mem_id).first()
+        query = db.query(model).filter(model.id == mem_id)
+        if tenant_id:
+            query = query.filter(model.tenant_id == tenant_id)
+        record = query.first()
         if record:
             records.append((mem_type, record))
     return records
@@ -511,6 +539,7 @@ def _collect_threshold_records(
     above_score: Optional[float],
     types: list[str],
     limit: int,
+    tenant_id: Optional[str] = None,
 ) -> list[tuple[str, object]]:
     candidates: list[tuple[str, object]] = []
     for mem_type in types:
@@ -518,6 +547,8 @@ def _collect_threshold_records(
         if not model:
             continue
         query = db.query(model).filter(model.tier == tier)
+        if tenant_id:
+            query = query.filter(model.tenant_id == tenant_id)
         if below_score is not None:
             query = query.filter(model.score <= below_score)
         if above_score is not None:
@@ -543,8 +574,11 @@ def _collect_summary_threshold_records(
     below_score: Optional[float],
     above_score: Optional[float],
     limit: int,
+    tenant_id: Optional[str] = None,
 ) -> list[MemorySummary]:
     query = db.query(MemorySummary).filter(MemorySummary.tier == tier)
+    if tenant_id:
+        query = query.filter(MemorySummary.tenant_id == tenant_id)
     if below_score is not None:
         query = query.filter(MemorySummary.score <= below_score)
         query = query.order_by(MemorySummary.score.asc())

@@ -76,7 +76,13 @@ def _run_embedding_backfill() -> dict:
                 if not text_value:
                     skipped += 1
                     continue
-                if _store_embedding(db, source_type, record.id, text_value):
+                if _store_embedding(
+                    db,
+                    source_type,
+                    record.id,
+                    text_value,
+                    tenant_id=getattr(record, "tenant_id", None),
+                ):
                     backfilled += 1
                 else:
                     skipped += 1
@@ -97,6 +103,6 @@ async def _embedding_backfill_loop() -> None:
         try:
             stats = await asyncio.to_thread(_run_embedding_backfill)
             if stats.get("status") == "ok" and stats.get("backfilled", 0) > 0:
-                logger.info("Embedding backfill complete", extra=stats)
+                logger.debug("embedding_backfill_complete", extra=stats)
         except Exception as exc:
             logger.warning(f"Embedding backfill error: {exc}")

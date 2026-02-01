@@ -88,7 +88,11 @@ def validate_embedding_text(text: str) -> None:
     validate_required_text(text, "text", MAX_EMBEDDING_TEXT_LENGTH)
 
 
-def validate_evidence_observation_ids(db, evidence_ids: Optional[Sequence[int]]) -> None:
+def validate_evidence_observation_ids(
+    db,
+    evidence_ids: Optional[Sequence[int]],
+    tenant_id: Optional[str] = None,
+) -> None:
     if not evidence_ids:
         return
     invalid_types = [
@@ -108,11 +112,10 @@ def validate_evidence_observation_ids(db, evidence_ids: Optional[Sequence[int]])
             field="evidence_observation_ids",
             error_type="invalid_id",
         )
-    existing_rows = (
-        db.query(Observation.id)
-        .filter(Observation.id.in_(set(evidence_ids)))
-        .all()
-    )
+    query = db.query(Observation.id).filter(Observation.id.in_(set(evidence_ids)))
+    if tenant_id:
+        query = query.filter(Observation.tenant_id == tenant_id)
+    existing_rows = query.all()
     existing_ids = {row[0] for row in existing_rows}
     missing_ids = sorted({value for value in evidence_ids if value not in existing_ids})
     if missing_ids:

@@ -108,6 +108,14 @@ def memory_search(
     min_confidence: float = 0.0,
     domain: Optional[str] = None,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
+    include_edges: bool = False,
+    include_chains: bool = False,
+    max_edges_per_item: int = 5,
+    max_chains_per_item: int = 3,
+    edge_min_weight: Optional[float] = None,
+    edge_rel_type: Optional[str] = None,
+    edge_direction: str = "both",
 ) -> dict:
     return memory_service.memory_search(
         query=query,
@@ -115,6 +123,14 @@ def memory_search(
         min_confidence=min_confidence,
         domain=domain,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
+        include_edges=include_edges,
+        include_chains=include_chains,
+        max_edges_per_item=max_edges_per_item,
+        max_chains_per_item=max_chains_per_item,
+        edge_min_weight=edge_min_weight,
+        edge_rel_type=edge_rel_type,
+        edge_direction=edge_direction,
         context=get_current_context(),
     )
 
@@ -132,6 +148,7 @@ def search_cold_memory(
     tags: Optional[list[str]] = None,
     include_evidence: bool = True,
     bump_score: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.search_cold_memory(
         query=query,
@@ -145,6 +162,7 @@ def search_cold_memory(
         tags=tags,
         include_evidence=include_evidence,
         bump_score=bump_score,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -225,6 +243,7 @@ def memory_store(
     ai_platform: str = "Unknown",
     conversation_id: Optional[str] = None,
     conversation_title: Optional[str] = None,
+    agent_uuid: Optional[str] = None,
 ) -> dict:
     return memory_service.memory_store(
         observation=observation,
@@ -235,6 +254,7 @@ def memory_store(
         ai_platform=ai_platform,
         conversation_id=conversation_id,
         conversation_title=conversation_title,
+        agent_uuid=agent_uuid,
         context=get_current_context(),
     )
 
@@ -246,6 +266,7 @@ def memory_recall(
     limit: int = 10,
     ai_name: Optional[str] = None,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.memory_recall(
         domain=domain,
@@ -253,6 +274,7 @@ def memory_recall(
         limit=limit,
         ai_name=ai_name,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -269,6 +291,7 @@ def memory_init_session(
     ai_name: str,
     ai_platform: str,
     source_url: Optional[str] = None,
+    agent_uuid: Optional[str] = None,
 ) -> dict:
     return memory_service.memory_init_session(
         conversation_id=conversation_id,
@@ -276,6 +299,7 @@ def memory_init_session(
         ai_name=ai_name,
         ai_platform=ai_platform,
         source_url=source_url,
+        agent_uuid=agent_uuid,
         context=get_current_context(),
     )
 
@@ -312,6 +336,7 @@ def memory_store_concept(
     metadata: Optional[dict] = None,
     ai_name: Optional[str] = None,
     ai_platform: Optional[str] = None,
+    agent_uuid: Optional[str] = None,
 ) -> dict:
     return memory_service.memory_store_concept(
         name=name,
@@ -322,6 +347,7 @@ def memory_store_concept(
         metadata=metadata,
         ai_name=ai_name,
         ai_platform=ai_platform,
+        agent_uuid=agent_uuid,
         context=get_current_context(),
     )
 
@@ -330,10 +356,12 @@ def memory_store_concept(
 def memory_get_concept(
     name: str,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.memory_get_concept(
         name=name,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -374,12 +402,14 @@ def memory_related_concepts(
     rel_type: Optional[str] = None,
     min_weight: float = 0.0,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.memory_related_concepts(
         concept_name=concept_name,
         rel_type=rel_type,
         min_weight=min_weight,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -394,6 +424,7 @@ def memory_update_pattern(
     ai_name: Optional[str] = None,
     ai_platform: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    agent_uuid: Optional[str] = None,
 ) -> dict:
     return memory_service.memory_update_pattern(
         category=category,
@@ -404,6 +435,7 @@ def memory_update_pattern(
         ai_name=ai_name,
         ai_platform=ai_platform,
         conversation_id=conversation_id,
+        agent_uuid=agent_uuid,
         context=get_current_context(),
     )
 
@@ -413,11 +445,13 @@ def memory_get_pattern(
     category: str,
     pattern_name: str,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.memory_get_pattern(
         category=category,
         pattern_name=pattern_name,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -428,12 +462,14 @@ def memory_patterns(
     min_confidence: float = 0.0,
     limit: int = 20,
     include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
 ) -> dict:
     return memory_service.memory_patterns(
         category=category,
         min_confidence=min_confidence,
         limit=limit,
         include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
         context=get_current_context(),
     )
 
@@ -454,12 +490,456 @@ def memory_user_guide(
 def memory_bootstrap(
     ai_name: Optional[str] = None,
     ai_platform: Optional[str] = None,
+    agent_uuid: Optional[str] = None,
 ) -> dict:
     return memory_service.memory_bootstrap(
         ai_name=ai_name,
         ai_platform=ai_platform,
+        agent_uuid=agent_uuid,
         context=get_current_context(),
     )
+
+
+# =============================================================================
+# Memory Chain Tools
+# =============================================================================
+
+@mcp_tool()
+def memory_create_chain(
+    title: Optional[str] = None,
+    kind: Optional[str] = None,
+    meta: Optional[dict] = None,
+    initial_memory_ids: Optional[list[str]] = None,
+) -> dict:
+    return memory_service.memory_create_chain(
+        title=title,
+        kind=kind,
+        meta=meta,
+        initial_memory_ids=initial_memory_ids,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_get_chain(
+    chain_id: str,
+) -> dict:
+    return memory_service.memory_get_chain(
+        chain_id=chain_id,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool()
+def memory_add_to_chain(
+    chain_id: str,
+    memory_id: str,
+    seq: Optional[int] = None,
+    role: Optional[str] = None,
+) -> dict:
+    return memory_service.memory_add_to_chain(
+        chain_id=chain_id,
+        memory_id=memory_id,
+        seq=seq,
+        role=role,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=DESTRUCTIVE_TOOL_ANNOTATIONS)
+def memory_remove_from_chain(
+    chain_id: str,
+    memory_id: str,
+) -> dict:
+    return memory_service.memory_remove_from_chain(
+        chain_id=chain_id,
+        memory_id=memory_id,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_list_chains_for_memory(
+    memory_id: str,
+) -> dict:
+    return memory_service.memory_list_chains_for_memory(
+        memory_id=memory_id,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_list_chains_for_observation(
+    observation_id: int,
+) -> dict:
+    return memory_service.memory_list_chains_for_observation(
+        observation_id=observation_id,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool()
+def memory_chain_create(
+    chain_type: str,
+    name: Optional[str] = None,
+    title: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    store_id: Optional[str] = None,
+    scope: Optional[str] = None,
+) -> dict:
+    return memory_service.memory_chain_create(
+        chain_type=chain_type,
+        name=name,
+        title=title,
+        metadata=metadata,
+        store_id=store_id,
+        scope=scope,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool()
+def memory_chain_append(
+    chain_id: str,
+    item_type: str,
+    item_id: Optional[str] = None,
+    text: Optional[str] = None,
+    role: Optional[str] = None,
+    timestamp: Optional[str] = None,
+) -> dict:
+    return memory_service.memory_chain_append(
+        chain_id=chain_id,
+        item_type=item_type,
+        item_id=item_id,
+        text=text,
+        role=role,
+        timestamp=timestamp,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_chain_get(
+    chain_id: str,
+    limit: int = 50,
+    cursor: Optional[str] = None,
+    order: str = "asc",
+) -> dict:
+    return memory_service.memory_chain_get(
+        chain_id=chain_id,
+        limit=limit,
+        cursor=cursor,
+        order=order,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_chain_list(
+    chain_type: Optional[str] = None,
+    store_id: Optional[str] = None,
+    name_contains: Optional[str] = None,
+    limit: int = 100,
+) -> dict:
+    return memory_service.memory_chain_list(
+        chain_type=chain_type,
+        store_id=store_id,
+        name_contains=name_contains,
+        limit=limit,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool()
+def memory_chain_update(
+    chain_id: str,
+    name: Optional[str] = None,
+    title: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    status: Optional[str] = None,
+) -> dict:
+    return memory_service.memory_chain_update(
+        chain_id=chain_id,
+        name=name,
+        title=title,
+        metadata=metadata,
+        status=status,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=DESTRUCTIVE_TOOL_ANNOTATIONS)
+def memory_chain_entry_archive(
+    entry_id: Optional[str] = None,
+    chain_id: Optional[str] = None,
+    seq: Optional[int] = None,
+) -> dict:
+    return memory_service.memory_chain_entry_archive(
+        entry_id=entry_id,
+        chain_id=chain_id,
+        seq=seq,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Memory Relationship Tools
+# =============================================================================
+
+@mcp_tool()
+def memory_add_relationship(
+    from_ref: str,
+    to_ref: str,
+    rel_type: str,
+    weight: Optional[float] = None,
+    description: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> dict:
+    return memory_service.memory_add_relationship(
+        from_ref=from_ref,
+        to_ref=to_ref,
+        rel_type=rel_type,
+        weight=weight,
+        description=description,
+        metadata=metadata,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_list_relationships(
+    ref: str,
+    direction: str = "both",
+    rel_type: Optional[str] = None,
+    min_weight: Optional[float] = None,
+    limit: int = 100,
+) -> dict:
+    return memory_service.memory_list_relationships(
+        ref=ref,
+        direction=direction,
+        rel_type=rel_type,
+        min_weight=min_weight,
+        limit=limit,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_related(
+    ref: str,
+    rel_type: Optional[str] = None,
+    min_weight: Optional[float] = None,
+    limit: int = 50,
+) -> dict:
+    return memory_service.memory_related(
+        ref=ref,
+        rel_type=rel_type,
+        min_weight=min_weight,
+        limit=limit,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_get_supersession(
+    ref: str,
+) -> dict:
+    return memory_service.memory_get_supersession(
+        ref=ref,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Relationship Residue Tools
+# =============================================================================
+
+@mcp_tool()
+def relationship_add_residue(
+    edge_id: str,
+    event_type: str,
+    actor: Optional[str] = None,
+    alternatives_considered: Optional[list] = None,
+    alternatives_ruled_out: Optional[list] = None,
+    friction_metrics: Optional[dict] = None,
+    compression_texture: Optional[str] = None,
+    encoded_rel_type: Optional[str] = None,
+    encoded_weight: Optional[float] = None,
+) -> dict:
+    return memory_service.relationship_add_residue(
+        edge_id=edge_id,
+        event_type=event_type,
+        actor=actor,
+        alternatives_considered=alternatives_considered,
+        alternatives_ruled_out=alternatives_ruled_out,
+        friction_metrics=friction_metrics,
+        compression_texture=compression_texture,
+        encoded_rel_type=encoded_rel_type,
+        encoded_weight=encoded_weight,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def relationship_list_residue(
+    edge_id: str,
+    limit: int = 20,
+    actor: Optional[str] = None,
+    event_type: Optional[str] = None,
+) -> dict:
+    return memory_service.relationship_list_residue(
+        edge_id=edge_id,
+        limit=limit,
+        actor=actor,
+        event_type=event_type,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Reference-Based Retrieval Tools
+# =============================================================================
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_get_by_ref(
+    ref: str,
+    include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
+) -> dict:
+    return memory_service.memory_get_by_ref(
+        ref=ref,
+        include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memory_get_many_by_refs(
+    refs: list[str],
+    include_cold: bool = False,
+    ai_instance_id: Optional[int] = None,
+) -> dict:
+    return memory_service.memory_get_many_by_refs(
+        refs=refs,
+        include_cold=include_cold,
+        ai_instance_id=ai_instance_id,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Store Management Tools
+# =============================================================================
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def stores_list_accessible() -> dict:
+    return memory_service.stores_list_accessible(
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def stores_get_active() -> dict:
+    return memory_service.stores_get_active(
+        context=get_current_context(),
+    )
+
+
+@mcp_tool()
+def stores_set_active(
+    store_id: str,
+    persist_default: bool = False,
+) -> dict:
+    return memory_service.stores_set_active(
+        store_id=store_id,
+        persist_default=persist_default,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Agent Anchor Tools
+# =============================================================================
+
+@mcp_tool()
+def agent_anchor_set(
+    ai_name: str,
+    ai_platform: str,
+    anchor_chain_id: str,
+    anchor_kind: str = "agent_profile",
+) -> dict:
+    return memory_service.agent_anchor_set(
+        ai_name=ai_name,
+        ai_platform=ai_platform,
+        anchor_chain_id=anchor_chain_id,
+        anchor_kind=anchor_kind,
+        context=get_current_context(),
+    )
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def agent_anchor_get(
+    ai_name: str,
+    ai_platform: str,
+    anchor_kind: str = "agent_profile",
+) -> dict:
+    return memory_service.agent_anchor_get(
+        ai_name=ai_name,
+        ai_platform=ai_platform,
+        anchor_kind=anchor_kind,
+        context=get_current_context(),
+    )
+
+
+# =============================================================================
+# Additional System Tools
+# =============================================================================
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def tool_inventory_status_mcp(
+    refresh_if_empty: bool = False,
+    reason: str = "",
+) -> dict:
+    """Return tool inventory details and optionally rebind when empty."""
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(
+        tool_inventory_status(refresh_if_empty=refresh_if_empty, reason=reason)
+    )
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def tool_inventory_status() -> dict:
+    return memory_service.tool_inventory_status(context=get_current_context())
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def capabilities_get() -> dict:
+    """Return system capabilities and limits."""
+    return memory_service.capabilities_get(context=get_current_context())
+
+
+@mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def health_status() -> dict:
+    """Return system health status."""
+    return memory_service.health_status(context=get_current_context())
+
+
+@mcp_tool(name="memorygate.health", annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memorygate_health() -> dict:
+    """Alias for health_status (replaces REST /health)."""
+    return memory_service.health_status(context=get_current_context())
+
+
+@mcp_tool(name="memorygate.health_tools", annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memorygate_health_tools() -> dict:
+    """Alias for tool inventory status (replaces REST /health/tools)."""
+    return memory_service.tool_inventory_status(context=get_current_context())
+
+
+@mcp_tool(name="memorygate.health_deps", annotations=READ_ONLY_TOOL_ANNOTATIONS)
+def memorygate_health_deps() -> dict:
+    """Alias for dependency health (replaces REST /health/deps)."""
+    return memory_service.health_status(context=get_current_context())
 
 
 mcp_sse_app = MCPAuthMiddleware(mcp.http_app(

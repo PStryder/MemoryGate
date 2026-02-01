@@ -7,7 +7,9 @@ from __future__ import annotations
 import logging
 import os
 
-logging.basicConfig(level=logging.INFO)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
+logging.basicConfig(level=LOG_LEVEL_VALUE)
 logger = logging.getLogger("memorygate")
 
 
@@ -71,8 +73,12 @@ EMBEDDING_DIM = 1536
 AUTO_CREATE_EXTENSIONS = _get_bool("AUTO_CREATE_EXTENSIONS", True)
 AUTO_MIGRATE_ON_STARTUP = _get_bool("AUTO_MIGRATE_ON_STARTUP", True)
 
-# Tenancy mode (single tenant only for now)
-TENANCY_MODE = os.environ.get("MEMORYGATE_TENANCY_MODE", "single").strip().lower()
+# Tenancy mode (single tenant by default; optional/required supported for parity with SaaS)
+TENANCY_OPTIONAL = "optional"
+TENANCY_REQUIRED = "required"
+TENANCY_SINGLE = "single"
+_TENANCY_RAW = os.environ.get("MEMORYGATE_TENANCY_MODE", TENANCY_SINGLE).strip().lower()
+TENANCY_MODE = TENANCY_OPTIONAL if _TENANCY_RAW == TENANCY_SINGLE else _TENANCY_RAW
 
 # Cleanup cadence for OAuth state/session tables
 CLEANUP_INTERVAL_SECONDS = _get_int("CLEANUP_INTERVAL_SECONDS", 900)
@@ -135,14 +141,26 @@ STORAGE_QUOTA_BYTES = _get_int("STORAGE_QUOTA_BYTES", 10_000_000_000)
 ARCHIVE_MULTIPLIER = _get_float("ARCHIVE_MULTIPLIER", 2.0)
 DEFAULT_TENANT_ID = "system"
 
+# Stable agent identity namespace (UUIDv5).
+AGENT_UUID_NAMESPACE = os.environ.get(
+    "MEMORYGATE_AGENT_NAMESPACE_UUID",
+    "b2f3e6d6-8a7c-4d8f-9e8f-1d1e3c7a2b4d",
+).strip()
+
+# API key lifecycle settings (used by SaaS; harmless in standalone).
+API_KEY_EXPIRY_DAYS = _get_int("API_KEY_EXPIRY_DAYS", 90)
+API_KEY_STALE_DAYS = _get_int("API_KEY_STALE_DAYS", 90)
+API_KEY_DELETE_DAYS = _get_int("API_KEY_DELETE_DAYS", 30)
+API_KEY_ACTIVE_LIMIT = _get_int("API_KEY_ACTIVE_LIMIT", 50)
+
 
 def validate_and_prepare_config() -> None:
     """Validate configuration and apply derived settings at startup."""
     global DATABASE_URL, DB_BACKEND_EFFECTIVE, VECTOR_BACKEND_EFFECTIVE
 
     errors = []
-    if TENANCY_MODE != "single":
-        errors.append("MEMORYGATE_TENANCY_MODE must be 'single'")
+    if TENANCY_MODE not in {TENANCY_OPTIONAL, TENANCY_REQUIRED}:
+        errors.append("MEMORYGATE_TENANCY_MODE must be 'single', 'optional', or 'required'")
     if DB_BACKEND not in {"postgres", "sqlite"}:
         errors.append("DB_BACKEND must be 'postgres' or 'sqlite'")
 

@@ -11,13 +11,6 @@ primary_region = "iad"
   min_machines_running = 1
   processes = ["app"]
 
-[[http_service.checks]]
-  grace_period = "60s"
-  interval = "30s"
-  method = "GET"
-  path = "/health"
-  timeout = "10s"
-
 [env]
   AUTO_MIGRATE_ON_STARTUP = "false"
   AUTO_CREATE_EXTENSIONS = "false"
@@ -34,3 +27,12 @@ primary_region = "iad"
   memory = "2gb"
   cpu_kind = "shared"
   cpus = 1
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"

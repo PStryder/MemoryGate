@@ -21,10 +21,6 @@ from core.mcp import (
 from core.services import memory_service
 from core.services import retention_service
 from app.middleware import configure_middleware
-from app.routes.health import router as health_router
-from app.routes.root import router as root_router
-from app.routes.oauth_discovery import router as oauth_discovery_router
-from app.routes.oauth_routes import router as auth_router
 from mcp_auth_gate import MCPAuthGateASGI
 from oauth_models import cleanup_expired_sessions, cleanup_expired_states
 
@@ -117,15 +113,7 @@ app.state.retention_task = None
 app.state.embedding_backfill_task = None
 app.state.rate_limiter = configure_middleware(app)
 
-# Mount OAuth discovery and authorization routes (for Claude Desktop MCP)
-app.include_router(oauth_discovery_router)
-
-# Mount OAuth user management routes
-app.include_router(auth_router)
-
-# Health and root endpoints
-app.include_router(health_router)
-app.include_router(root_router)
+# REST endpoints removed; MCP is the only surface.
 
 # Mount MCP apps with auth gate (pass DB class for dynamic lookup)
 mcp_sse_entry_app = MCPAuthGateASGI(mcp_sse_app, lambda: DB.SessionLocal, _mcp_tool_inventory_check)
