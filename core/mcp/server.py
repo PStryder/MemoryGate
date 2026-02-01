@@ -63,7 +63,7 @@ def _rebind_tool_registry(reason: str) -> None:
         )
 
 
-async def tool_inventory_status(refresh_if_empty: bool = False, reason: str = "") -> dict:
+async def _tool_inventory_status(refresh_if_empty: bool = False, reason: str = "") -> dict:
     """Return tool inventory details and optionally rebind when empty."""
     tools = await mcp.get_tools()
     tool_names = sorted(tools.keys())
@@ -88,7 +88,7 @@ async def tool_inventory_status(refresh_if_empty: bool = False, reason: str = ""
 
 
 async def _mcp_tool_inventory_check() -> dict:
-    return await tool_inventory_status(refresh_if_empty=True, reason="mcp_request")
+    return await _tool_inventory_status(refresh_if_empty=True, reason="mcp_request")
 
 
 @mcp.resource(
@@ -98,7 +98,7 @@ async def _mcp_tool_inventory_check() -> dict:
 )
 async def tool_inventory_resource() -> dict:
     """Expose tool inventory as a resource for discovery fallbacks."""
-    return await tool_inventory_status(refresh_if_empty=True, reason="resource_read")
+    return await _tool_inventory_status(refresh_if_empty=True, reason="resource_read")
 
 
 @mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
@@ -897,15 +897,12 @@ def agent_anchor_get(
 # =============================================================================
 
 @mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
-def tool_inventory_status_mcp(
+async def tool_inventory_status_mcp(
     refresh_if_empty: bool = False,
     reason: str = "",
 ) -> dict:
     """Return tool inventory details and optionally rebind when empty."""
-    import asyncio
-    return asyncio.get_event_loop().run_until_complete(
-        tool_inventory_status(refresh_if_empty=refresh_if_empty, reason=reason)
-    )
+    return await _tool_inventory_status(refresh_if_empty=refresh_if_empty, reason=reason)
 
 @mcp_tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
 def tool_inventory_status() -> dict:

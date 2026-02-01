@@ -9,7 +9,7 @@ os.environ.setdefault("VECTOR_BACKEND", "none")
 os.environ.setdefault("REQUIRE_MCP_AUTH", "false")
 os.environ.setdefault("EMBEDDING_PROVIDER", "none")
 
-from core.models import Concept, Observation
+from core.models import Concept, MemoryChain, MemoryChainItem, Observation
 from app.main import app
 from core.mcp import mcp_stream_app
 
@@ -20,6 +20,8 @@ class ToolSeed:
     concept_name: str
     concept_peer: str
     alias: str
+    chain_id: str
+    chain_item_id: str
 
 
 def _seed_context(server_db) -> ToolSeed:
@@ -47,11 +49,30 @@ def _seed_context(server_db) -> ToolSeed:
         db.add_all([observation, concept_a, concept_b])
         db.commit()
         db.refresh(observation)
+        chain = MemoryChain(
+            tenant_id=observation.tenant_id,
+            title="Tool routing chain",
+            kind="tool_seed",
+        )
+        db.add(chain)
+        db.flush()
+        chain_item = MemoryChainItem(
+            tenant_id=observation.tenant_id,
+            chain_id=chain.id,
+            memory_id=f"observation:{observation.id}",
+            observation_id=observation.id,
+            seq=1,
+        )
+        db.add(chain_item)
+        db.commit()
+        db.refresh(chain_item)
         return ToolSeed(
             observation_id=observation.id,
             concept_name=concept_name,
             concept_peer=concept_peer,
             alias="ToolSeedAlias",
+            chain_id=str(chain.id),
+            chain_item_id=str(chain_item.id),
         )
     finally:
         db.close()
@@ -72,6 +93,13 @@ def _field_override(field_name: str, seed: ToolSeed):
         "pattern_text": "Tool pattern text",
         "observation": "Tool observation",
         "domain": "tool_seed",
+        "chain_id": seed.chain_id,
+        "anchor_chain_id": seed.chain_id,
+        "memory_id": f"observation:{seed.observation_id}",
+        "item_type": "memory",
+        "item_id": f"observation:{seed.observation_id}",
+        "entry_id": seed.chain_item_id,
+        "seq": 1,
         "name": seed.concept_name,
         "concept_name": seed.concept_name,
         "concept_type": "project",

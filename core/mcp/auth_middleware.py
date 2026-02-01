@@ -8,6 +8,7 @@ for the duration of the request using contextvars (async-safe).
 from __future__ import annotations
 
 import json
+import os
 from contextvars import ContextVar
 from typing import Optional
 
@@ -40,9 +41,17 @@ class MCPAuthMiddleware:
     
     def __init__(self, app):
         self.app = app
+        self.require_auth = os.environ.get("REQUIRE_MCP_AUTH", "true").lower() == "true"
+
+    def __getattr__(self, name):
+        return getattr(self.app, name)
     
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        if not self.require_auth:
             await self.app(scope, receive, send)
             return
         

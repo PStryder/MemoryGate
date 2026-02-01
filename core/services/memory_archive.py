@@ -1561,6 +1561,8 @@ def restore_archived_memory(
         return {"status": "error", "message": "reason is required"}
     _validate_limit(limit, "limit", REHYDRATE_LIMIT_MAX)
 
+    tenant_id = resolve_tenant_id(context)
+
     tier_value = (target_tier or "").strip().lower()
     if tier_value not in {"hot", "cold"}:
         return {"status": "error", "message": "target_tier must be 'hot' or 'cold'"}

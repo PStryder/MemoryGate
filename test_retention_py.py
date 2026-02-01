@@ -4,13 +4,21 @@ import sys
 sys.path.insert(0, '/app')
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 import os
+import pytest
 
 # Connect to database
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://memorygate:memorygate@postgres:5432/memorygate')
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
+
+def _skip_if_unavailable(exc: Exception) -> None:
+    message = f"Skipping retention test: database unavailable ({exc})"
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        pytest.skip(message)
+    print(message)
 
 def test_retention():
     db = SessionLocal()
@@ -19,6 +27,12 @@ def test_retention():
         print("=" * 60)
         print("MemoryGate Retention Test (Direct DB)")
         print("=" * 60)
+
+        try:
+            db.execute(text("SELECT 1"))
+        except OperationalError as exc:
+            _skip_if_unavailable(exc)
+            return
         
         # Store test observation
         result = db.execute(text("""
